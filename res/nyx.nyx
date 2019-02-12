@@ -21,7 +21,7 @@
 # SOFTWARE.
 
 #++
-# The root module containing nyx utility functions.
+# The root module containing nyx utility functions and common data types.
 #--
 @module nyx
 
@@ -51,4 +51,172 @@
 # @returns A new sequence of bytes in marshaled order.
 #--
 @alias __builtin_concat__ concat
+
+
+#++
+# Append the raw bytes of a value to a byte sequence.
+#
+# This function takes a sequence and a value and appends the bytes of the value
+# to the sequence.
+#
+# @seq A byte sequence.
+# @val The value to append to the byte sequence.
+#--
+@alias __builtin_concat__ append
+
+
+#++
+# An unsigned eight bit integer in machine byte order.
+#--
+@alias __builtin_unsigned_int_8__ u8
+
+
+#++
+# An unsigned sixteen bit integer in machine byte order.
+#--
+@alias __builtin_unsigned_int_16__ u16
+
+
+#++
+# An unsigned thirty two bit integer in machine byte order.
+#--
+@alias __builtin_unsigned_int_32__ u32
+
+
+#++
+# An unsigned sixty four bit integer in machine byte order.
+#--
+@alias __builtin_unsigned_int_64__ u64
+
+
+#++
+# A signed eight bit integer in machine byte order.
+#--
+@alias __builtin_signed_int_8__ i8
+
+
+#++
+# A signed sixteen bit integer in machine byte order.
+#--
+@alias __builtin_signed_int_16__ i16
+
+
+#++
+# A signed thirty two bit integer in machine byte order.
+#--
+@alias __builtin_signed_int_32__ i32
+
+
+#++
+# An signed sixty four bit integer in machine byte order.
+#--
+@alias __builtin_signed_int_64__ i64
+
+
+#++
+# An unsigned sixteen bit integer in little endian byte order.
+#--
+@alias __builtin_unsigned_int_16_le__ u16l
+
+
+#++
+# An unsigned thirty two bit integer in little endian byte order.
+#--
+@alias __builtin_unsigned_int_32_le__ u32l
+
+
+#++
+# An unsigned sixty four bit integer in little endian byte order.
+#--
+@alias __builtin_unsigned_int_64_le__ u64l
+
+
+#++
+# A signed sixteen bit integer in little endian byte order.
+#--
+@alias __builtin_signed_int_16_le__ i16l
+
+
+#++
+# A signed thirty two bit integer in little endian byte order.
+#--
+@alias __builtin_signed_int_32_le__ i32l
+
+
+#++
+# A signed sixty four bit integer in little endian byte order.
+#--
+@alias __builtin_signed_int_64_le__ i64l
+
+
+#++
+# An unsigned sixteen bit integer in big endian byte order.
+#--
+@alias __builtin_unsigned_int_16_be__ u16b
+
+
+#++
+# An unsigned thirty two bit integer in big endian byte order.
+#--
+@alias __builtin_unsigned_int_32_be__ u32b
+
+
+#++
+# An unsigned sixty four bit integer in big endian byte order.
+#--
+@alias __builtin_unsigned_int_64_be__ u64b
+
+
+#++
+# A signed sixteen bit integer in big endian byte order.
+#--
+@alias __builtin_signed_int_16_be__ i16b
+
+
+#++
+# A signed thirty two bit integer in big endian byte order.
+#--
+@alias __builtin_signed_int_32_be__ i32b
+
+
+#++
+# A signed sixty four bit integer in big endian byte order.
+#--
+@alias __builtin_signed_int_64_be__ i64b
+
+
+#++
+# A thirty two bit floating point number in machine byte order.
+#--
+@alias __builtin_signed_float_32__ f32
+
+
+#++
+# A sixty four bit floating point number in machine order.
+#--
+@alias __builtin_signed_float_64__ f64
+
+
+#++
+# A thirty two bit floating point number in little endian byte order.
+#--
+@alias __builtin_signed_float_32_le__ f32l
+
+
+#++
+# A sixty four bit floating point number in little endian byte order.
+#--
+@alias __builtin_signed_float_64_le__ f64l
+
+
+#++
+# A thirty two bit floating point number in big endian byte order.
+#--
+@alias __builtin_signed_float_32_be__ f32b
+
+
+#++
+# A sixty four bit floating point number in big endian byte order.
+#--
+@alias __builtin_signed_float_64_be__ f64b
 
