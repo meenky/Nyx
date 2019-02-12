@@ -1,0 +1,81 @@
+# MIT License
+
+# Copyright (c) 2019 John Powell
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# Google Protocol Buffer wire format
+@namespace nyx.example.protobuf
+
+
+# the varint format used for integers
+base128 {
+  pattern: (0b1*******{0,9} 0b0*******)=>raw
+  decode:  ((= val (u64 0))
+            (sequence raw (lambda (byte index length)
+              (= val (<< byte (* 7 index)))
+            )))
+  encode:  ((while (> val 127)
+              (append raw (| (& val 0x7F) 0x80))
+              (= val (>> val 7))
+            )
+            (append raw (& val 0x7F)))
+  storage: val=>u64
+}
+
+# a length delimited string of bytes
+length_delim {
+  pattern: base128=>length u8{length}=>payload
+  storage: [length=>u64 payload=>vector]
+}
+
+# single byte bit field that denotes the field number and type
+key {
+  pattern: 0b*****=>number 0b***=>type
+  storage: [number=>i8 type=>i8]
+}
+
+# fixed length eight byte value
+fixed64 {
+  pattern: i64l
+  storage: i64
+}
+
+# fixed length four byte value
+fixed32 {
+  pattern: i32l
+  storage: i32
+}
+
+# combination of a key and a value
+field {
+  pattern: key @match(key.type) {
+    0 => base128
+    1 => fixed64
+    2 => length_delim
+    5 => fixed32
+  }=>value
+  storage: [key value]
+}
+
+# an entire message
+message {
+  pattern: field{1,*}=>fields
+}
+
