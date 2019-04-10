@@ -22,6 +22,11 @@ bool ConcreteElement::is(Lexeme lexeme) const {
 }
 
 
+std::vector<std::shared_ptr<ConcreteElement>>::size_type ConcreteElement::size() const {
+  return 1;
+}
+
+
 namespace nyx {
   namespace syntax {
 
@@ -103,6 +108,11 @@ ConcreteCompoundElement::ConcreteCompoundElement(
 
 ConcreteCompoundElement::~ConcreteCompoundElement() {
   // nothing to do here
+}
+
+
+std::vector<std::shared_ptr<ConcreteElement>>::size_type ConcreteCompoundElement::size() const {
+  return children.size();
 }
 
 

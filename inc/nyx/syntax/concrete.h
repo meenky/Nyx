@@ -49,6 +49,8 @@ class ConcreteElement {
     virtual std::ostream &print(std::ostream &os) const = 0;
     virtual std::ostream &debug(std::ostream &os) const = 0;
 
+    virtual std::vector<std::shared_ptr<ConcreteElement>>::size_type size() const;
+
     virtual bool isValid() const = 0;
     virtual bool is(Lexeme) const;
 
@@ -115,9 +117,7 @@ class ConcreteCompoundElement: public ConcreteElement {
     inline const_reverse_iterator crbegin() const { children.begin(); }
     inline const_reverse_iterator crend()   const { children.end();   }
 
-    inline std::vector<std::shared_ptr<ConcreteElement>>::size_type size() const {
-      return children.size();
-    }
+    virtual std::vector<std::shared_ptr<ConcreteElement>>::size_type size() const;
 
     virtual std::ostream &print(std::ostream &os) const;
     virtual std::ostream &debug(std::ostream &os) const;
