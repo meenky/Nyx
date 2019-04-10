@@ -36,7 +36,6 @@
 # the magic number that always starts a PNG file
 magic_number {
   pattern: 0x89 'PNG' 0x0D 0x0A 0x1A 0x0A
-  # this is a synthetic value, required in the file but not stored in memory
   storage: none
 }
 
@@ -55,5 +54,6 @@ chunk {
 
 png {
   pattern: magic_number chunk{1,*}=>chunks
+  storage: chunks
 }
 

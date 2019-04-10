@@ -77,5 +77,6 @@ field {
 # an entire message
 message {
   pattern: field{1,*}=>fields
+  storage: fields
 }
 

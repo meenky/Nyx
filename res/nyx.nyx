@@ -188,35 +188,57 @@
 #++
 # A thirty two bit floating point number in machine byte order.
 #--
-@alias __builtin_signed_float_32__ f32
+@alias __builtin_float_32__ f32
 
 
 #++
 # A sixty four bit floating point number in machine order.
 #--
-@alias __builtin_signed_float_64__ f64
+@alias __builtin_float_64__ f64
 
 
 #++
 # A thirty two bit floating point number in little endian byte order.
 #--
-@alias __builtin_signed_float_32_le__ f32l
+@alias __builtin_float_32_le__ f32l
 
 
 #++
 # A sixty four bit floating point number in little endian byte order.
 #--
-@alias __builtin_signed_float_64_le__ f64l
+@alias __builtin_float_64_le__ f64l
 
 
 #++
 # A thirty two bit floating point number in big endian byte order.
 #--
-@alias __builtin_signed_float_32_be__ f32b
+@alias __builtin_float_32_be__ f32b
 
 
 #++
 # A sixty four bit floating point number in big endian byte order.
 #--
-@alias __builtin_signed_float_64_be__ f64b
+@alias __builtin_float_64_be__ f64b
 
+
+#++
+# A module containing text formats used by nyx.
+#--
+@module nyx.text
+
+#++
+# An ASCII character.
+#--
+ascii {
+  pattern: 0b0*******
+}
+
+#++
+# A UTF-8 codepoint.
+#--
+utf-8 {
+  pattern: ascii |
+           0b110***** 0b10****** |
+           0b1110**** 0b10****** 0b10****** |
+           0b11110*** 0b10****** 0b10****** 0b10******
+}

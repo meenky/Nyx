@@ -39,6 +39,13 @@
 #--
 @alias __builtin_crc8__  crc8
 
+@alias __builtin_crc8__  crc2
+@alias __builtin_crc8__  crc3
+@alias __builtin_crc8__  crc4
+@alias __builtin_crc8__  crc5
+@alias __builtin_crc8__  crc6
+@alias __builtin_crc8__  crc7
+
 
 #++
 # A sixteen bit CRC.
@@ -49,6 +56,14 @@
 # @arg mask The mask with with to XOR the result of the CRC calculation.
 #--
 @alias __builtin_crc16__ crc16
+
+@alias __builtin_crc16__ crc9
+@alias __builtin_crc16__ crc10
+@alias __builtin_crc16__ crc11
+@alias __builtin_crc16__ crc12
+@alias __builtin_crc16__ crc13
+@alias __builtin_crc16__ crc14
+@alias __builtin_crc16__ crc15
 
 
 #++
@@ -61,6 +76,22 @@
 #--
 @alias __builtin_crc32__ crc32
 
+@alias __builtin_crc32__ crc17
+@alias __builtin_crc32__ crc18
+@alias __builtin_crc32__ crc19
+@alias __builtin_crc32__ crc20
+@alias __builtin_crc32__ crc21
+@alias __builtin_crc32__ crc22
+@alias __builtin_crc32__ crc23
+@alias __builtin_crc32__ crc24
+@alias __builtin_crc32__ crc25
+@alias __builtin_crc32__ crc26
+@alias __builtin_crc32__ crc27
+@alias __builtin_crc32__ crc28
+@alias __builtin_crc32__ crc29
+@alias __builtin_crc32__ crc30
+@alias __builtin_crc32__ crc31
+
 
 #++
 # A sixty four bit CRC.
@@ -71,4 +102,36 @@
 # @arg mask The mask with with to XOR the result of the CRC calculation.
 #--
 @alias __builtin_crc64__ crc64
+
+@alias __builtin_crc32__ crc33
+@alias __builtin_crc32__ crc34
+@alias __builtin_crc32__ crc35
+@alias __builtin_crc32__ crc36
+@alias __builtin_crc32__ crc37
+@alias __builtin_crc32__ crc38
+@alias __builtin_crc32__ crc39
+@alias __builtin_crc32__ crc40
+@alias __builtin_crc32__ crc41
+@alias __builtin_crc32__ crc42
+@alias __builtin_crc32__ crc43
+@alias __builtin_crc32__ crc44
+@alias __builtin_crc32__ crc45
+@alias __builtin_crc32__ crc46
+@alias __builtin_crc32__ crc47
+@alias __builtin_crc32__ crc48
+@alias __builtin_crc32__ crc49
+@alias __builtin_crc32__ crc50
+@alias __builtin_crc32__ crc51
+@alias __builtin_crc32__ crc52
+@alias __builtin_crc32__ crc53
+@alias __builtin_crc32__ crc54
+@alias __builtin_crc32__ crc55
+@alias __builtin_crc32__ crc56
+@alias __builtin_crc32__ crc57
+@alias __builtin_crc32__ crc58
+@alias __builtin_crc32__ crc59
+@alias __builtin_crc32__ crc60
+@alias __builtin_crc32__ crc61
+@alias __builtin_crc32__ crc62
+@alias __builtin_crc32__ crc63
 
