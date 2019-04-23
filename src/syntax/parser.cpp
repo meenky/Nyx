@@ -4,27 +4,28 @@
 using namespace nyx::syntax;
 
 
-Parser::Parser(std::shared_ptr<Tokenizer> src):
-  tokenizer(src) {
+typedef std::vector<std::shared_ptr<Token>>::iterator token_iterator;
+typedef std::vector<std::shared_ptr<ConcreteElement>> concrete_vector;
+
+
+template<typename CONCRETE>
+static CONCRETE &as(concrete_vector::iterator iter) {
+  return *std::dynamic_pointer_cast<CONCRETE>(*iter);
 }
 
 
-//static auto asToken(std::shared_ptr<const ConcreteElement> ce) {
-//  return reinterpret_cast<const ConcreteTokenElement *>(ce.get())->token();
-//}
+static std::shared_ptr<ConcreteTokenElement> toToken(token_iterator iter) {
+  return std::make_shared<ConcreteTokenElement>(*iter);
+}
 
 
-typedef std::vector<std::shared_ptr<Token>>::iterator      token_iterator;
-typedef std::vector<std::shared_ptr<ConcreteElement>>      concrete_vector;
-
-
-auto extract(token_iterator start, token_iterator end) {
-  std::vector<std::shared_ptr<ConcreteElement>> retVal;
+static concrete_vector extract(token_iterator start, token_iterator end) {
+  concrete_vector retVal;
 
   retVal.reserve(end - start);
 
   while(start != end) {
-    retVal.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+    retVal.emplace_back(toToken(start));
     ++start;
   }
 
@@ -32,14 +33,19 @@ auto extract(token_iterator start, token_iterator end) {
 }
 
 
-auto extractNoEol(token_iterator start, token_iterator end) {
-  std::vector<std::shared_ptr<ConcreteElement>> retVal;
+static std::shared_ptr<ConcreteIdentifierElement> toIdentifier(token_iterator iter) {
+  return std::make_shared<ConcreteIdentifierElement>(extract(iter, iter + 1));
+}
+
+
+static concrete_vector extractNoEol(token_iterator start, token_iterator end) {
+  concrete_vector retVal;
 
   retVal.reserve(end - start);
 
   while(start != end) {
     if((*start)->lexeme() != Lexeme::EndOfLine) {
-      retVal.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+      retVal.emplace_back(toToken(start));
     }
     ++start;
   }
@@ -73,12 +79,17 @@ enum class AliasParseState {
 
 static int parseAlias(token_iterator &start, token_iterator last, concrete_vector &roots) {
   token_iterator iter = start;
+  concrete_vector children;
   AliasParseState state = AliasParseState::Ready;
+
+
+  children.reserve(3);
 
   while(state != AliasParseState::Error && iter != last) {
     switch(state) {
       case AliasParseState::Ready:
         if((*iter)->lexeme() == Lexeme::Alias) {
+          children.emplace_back(toToken(iter));
           state = AliasParseState::Keyword;
         }
         else {
@@ -89,6 +100,7 @@ static int parseAlias(token_iterator &start, token_iterator last, concrete_vecto
 
       case AliasParseState::Keyword:
         if((*iter)->lexeme() == Lexeme::Identifier) {
+          children.emplace_back(new ConcreteIdentifierElement(extract(iter, iter + 1)));
           state = AliasParseState::First;
         }
         else {
@@ -99,6 +111,7 @@ static int parseAlias(token_iterator &start, token_iterator last, concrete_vecto
 
       case AliasParseState::First:
         if((*iter)->lexeme() == Lexeme::Identifier) {
+          children.emplace_back(new ConcreteIdentifierElement(extract(iter, iter + 1)));
           state = AliasParseState::Second;
         }
         else {
@@ -109,7 +122,7 @@ static int parseAlias(token_iterator &start, token_iterator last, concrete_vecto
 
       case AliasParseState::Second:
         if((*iter)->lexeme() == Lexeme::EndOfLine) {
-          roots.emplace_back(std::make_shared<ConcreteAliasElement>(extract(start, iter)));
+          roots.emplace_back(std::make_shared<ConcreteAliasElement>(children));
           start = iter;
           return 0;
         }
@@ -264,12 +277,56 @@ static int parseDocumentation(token_iterator &start, token_iterator last, concre
 }
 
 
+enum class IdentifierParseState {
+  Error = -1,
+  Ready,
+  Identifier,
+  Dot
+};
+
+
+static std::shared_ptr<ConcreteIdentifierElement>
+parseIdentifier(token_iterator &start, token_iterator last) {
+  token_iterator iter = start;
+  IdentifierParseState state = IdentifierParseState::Ready;
+
+  while(state != IdentifierParseState::Error && iter != last) {
+    switch(state) {
+      case IdentifierParseState::Dot:
+      case IdentifierParseState::Ready:
+        if((*iter)->lexeme() == Lexeme::Identifier) {
+          state = IdentifierParseState::Identifier;
+        }
+        else {
+          unexpectedToken(*iter);
+          state = IdentifierParseState::Error;
+        }
+      break;
+
+      case IdentifierParseState::Identifier:
+        if((*iter)->lexeme() == Lexeme::Dot) {
+          state = IdentifierParseState::Dot;
+        }
+        else {
+          auto retVal = std::make_shared<ConcreteIdentifierElement>(extract(start, iter));
+          start = iter - 1;
+          return retVal;
+        }
+      break;
+    }
+
+    ++iter;
+  }
+
+  return nullptr;
+}
+
+
 enum class ImportParseState {
   Error = -1,
   Ready,
   Keyword,
   Identifier,
-  Dot,
   Namespace,
   From,
   As,
@@ -279,12 +336,16 @@ enum class ImportParseState {
 
 static int parseImport(token_iterator &start, token_iterator last, concrete_vector &roots) {
   token_iterator iter = start;
+  concrete_vector children;
   ImportParseState state = ImportParseState::Ready;
+
+  children.reserve(6);
 
   while(state != ImportParseState::Error && iter != last) {
     switch(state) {
       case ImportParseState::Ready:
         if((*iter)->lexeme() == Lexeme::Import) {
+          children.emplace_back(toToken(iter));
           state = ImportParseState::Keyword;
         }
         else {
@@ -295,7 +356,13 @@ static int parseImport(token_iterator &start, token_iterator last, concrete_vect
 
       case ImportParseState::Keyword:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          state = ImportParseState::Identifier;
+          if(auto ident = parseIdentifier(iter, last)) {
+            children.emplace_back(ident);
+            state = ImportParseState::Identifier;
+          }
+          else {
+            state = ImportParseState::Error;
+           }
         }
         else {
           unexpectedToken(*iter);
@@ -304,18 +371,17 @@ static int parseImport(token_iterator &start, token_iterator last, concrete_vect
       break;
 
       case ImportParseState::Identifier:
-        if((*iter)->lexeme() == Lexeme::Dot) {
-          state = ImportParseState::Dot;
-        }
-        else if((*iter)->lexeme() == Lexeme::EndOfLine) {
-          roots.emplace_back(std::make_shared<ConcreteImportElement>(extract(start, iter)));
+        if((*iter)->lexeme() == Lexeme::EndOfLine) {
+          roots.emplace_back(std::make_shared<ConcreteImportElement>(children));
           start = iter;
           return 0;
         }
         else if((*iter)->text() == "from") {
+          children.emplace_back(toToken(iter));
           state = ImportParseState::From;
         }
         else if((*iter)->text() == "as") {
+          children.emplace_back(toToken(iter));
           state = ImportParseState::As;
         }
         else {
@@ -325,9 +391,14 @@ static int parseImport(token_iterator &start, token_iterator last, concrete_vect
       break;
 
       case ImportParseState::From:
-      case ImportParseState::Dot:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          state = ImportParseState::Namespace;
+          if(auto ident = parseIdentifier(iter, last)) {
+            children.emplace_back(ident);
+            state = ImportParseState::Namespace;
+          }
+          else {
+            state = ImportParseState::Error;
+           }
         }
         else {
           unexpectedToken(*iter);
@@ -336,15 +407,13 @@ static int parseImport(token_iterator &start, token_iterator last, concrete_vect
       break;
 
       case ImportParseState::Namespace:
-        if((*iter)->lexeme() == Lexeme::Dot) {
-          state = ImportParseState::Dot;
-        }
-        else if((*iter)->lexeme() == Lexeme::EndOfLine) {
-          roots.emplace_back(std::make_shared<ConcreteImportElement>(extract(start, iter)));
+        if((*iter)->lexeme() == Lexeme::EndOfLine) {
+          roots.emplace_back(std::make_shared<ConcreteImportElement>(children));
           start = iter;
           return 0;
         }
         else if((*iter)->text() == "as") {
+          children.emplace_back(toToken(iter));
           state = ImportParseState::As;
         }
         else {
@@ -355,7 +424,13 @@ static int parseImport(token_iterator &start, token_iterator last, concrete_vect
 
       case ImportParseState::As:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          state = ImportParseState::Alias;
+          if(auto ident = parseIdentifier(iter, last)) {
+            children.emplace_back(ident);
+            state = ImportParseState::Alias;
+          }
+          else {
+            state = ImportParseState::Error;
+           }
         }
         else {
           unexpectedToken(*iter);
@@ -365,7 +440,7 @@ static int parseImport(token_iterator &start, token_iterator last, concrete_vect
 
       case ImportParseState::Alias:
         if((*iter)->lexeme() == Lexeme::EndOfLine) {
-          roots.emplace_back(std::make_shared<ConcreteImportElement>(extract(start, iter)));
+          roots.emplace_back(std::make_shared<ConcreteImportElement>(children));
           start = iter;
           return 0;
         }
@@ -387,19 +462,22 @@ enum class ModuleParseState {
   Error = -1,
   Ready,
   Keyword,
-  Identifier,
-  Dot
+  Identifier
 };
 
 
 static int parseModule(token_iterator &start, token_iterator last, concrete_vector &roots) {
   token_iterator iter = start;
+  concrete_vector children;
   ModuleParseState state = ModuleParseState::Ready;
+
+  children.reserve(2);
 
   while(state != ModuleParseState::Error && iter != last) {
     switch(state) {
       case ModuleParseState::Ready:
         if((*iter)->lexeme() == Lexeme::Module) {
+          children.emplace_back(toToken(iter));
           state = ModuleParseState::Keyword;
         }
         else {
@@ -410,7 +488,13 @@ static int parseModule(token_iterator &start, token_iterator last, concrete_vect
 
       case ModuleParseState::Keyword:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          state = ModuleParseState::Identifier;
+          if(auto ident = parseIdentifier(iter, last)) {
+            children.emplace_back(ident);
+            state = ModuleParseState::Identifier;
+          }
+          else {
+            state = ModuleParseState::Error;
+           }
         }
         else {
           unexpectedToken(*iter);
@@ -419,23 +503,10 @@ static int parseModule(token_iterator &start, token_iterator last, concrete_vect
       break;
 
       case ModuleParseState::Identifier:
-        if((*iter)->lexeme() == Lexeme::Dot) {
-          state = ModuleParseState::Dot;
-        }
-        else if((*iter)->lexeme() == Lexeme::EndOfLine) {
-          roots.emplace_back(std::make_shared<ConcreteModuleElement>(extract(start, iter)));
+        if((*iter)->lexeme() == Lexeme::EndOfLine) {
+          roots.emplace_back(std::make_shared<ConcreteModuleElement>(children));
           start = iter;
           return 0;
-        }
-        else {
-          unexpectedToken(*iter);
-          state = ModuleParseState::Error;
-        }
-      break;
-
-      case ModuleParseState::Dot:
-        if((*iter)->lexeme() == Lexeme::Identifier) {
-          state = ModuleParseState::Identifier;
         }
         else {
           unexpectedToken(*iter);
@@ -455,19 +526,22 @@ enum class NamespaceParseState {
   Error = -1,
   Ready,
   Keyword,
-  Identifier,
-  Dot
+  Identifier
 };
 
 
 static int parseNamespace(token_iterator &start, token_iterator last, concrete_vector &roots) {
   token_iterator iter = start;
+  concrete_vector children;
   NamespaceParseState state = NamespaceParseState::Ready;
+
+  children.reserve(2);
 
   while(state != NamespaceParseState::Error && iter != last) {
     switch(state) {
       case NamespaceParseState::Ready:
         if((*iter)->lexeme() == Lexeme::Namespace) {
+          children.emplace_back(toToken(iter));
           state = NamespaceParseState::Keyword;
         }
         else {
@@ -478,7 +552,13 @@ static int parseNamespace(token_iterator &start, token_iterator last, concrete_v
 
       case NamespaceParseState::Keyword:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          state = NamespaceParseState::Identifier;
+          if(auto ident = parseIdentifier(iter, last)) {
+            children.emplace_back(ident);
+            state = NamespaceParseState::Identifier;
+          }
+          else {
+            state = NamespaceParseState::Error;
+           }
         }
         else {
           unexpectedToken(*iter);
@@ -487,23 +567,10 @@ static int parseNamespace(token_iterator &start, token_iterator last, concrete_v
       break;
 
       case NamespaceParseState::Identifier:
-        if((*iter)->lexeme() == Lexeme::Dot) {
-          state = NamespaceParseState::Dot;
-        }
-        else if((*iter)->lexeme() == Lexeme::EndOfLine) {
-          roots.emplace_back(std::make_shared<ConcreteNamespaceElement>(extract(start, iter)));
+        if((*iter)->lexeme() == Lexeme::EndOfLine) {
+          roots.emplace_back(std::make_shared<ConcreteNamespaceElement>(children));
           start = iter;
           return 0;
-        }
-        else {
-          unexpectedToken(*iter);
-          state = NamespaceParseState::Error;
-        }
-      break;
-
-      case NamespaceParseState::Dot:
-        if((*iter)->lexeme() == Lexeme::Identifier) {
-          state = NamespaceParseState::Identifier;
         }
         else {
           unexpectedToken(*iter);
@@ -532,7 +599,7 @@ parseSExpression(token_iterator &start, token_iterator last) {
     return nullptr;
   }
 
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+  parts.emplace_back(toToken(iter));
   while(++iter != last) {
     switch((*iter)->lexeme()) {
       case Lexeme::EndOfLine:
@@ -540,7 +607,7 @@ parseSExpression(token_iterator &start, token_iterator last) {
       break;
 
       case Lexeme::CloseParen:
-        parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+        parts.emplace_back(toToken(iter));
         start = iter;
         return std::make_shared<ConcreteSexprElement>(parts);
       break;
@@ -577,7 +644,6 @@ parseSExpression(token_iterator &start, token_iterator last) {
       case Lexeme::FloatLiteral:
       case Lexeme::GreaterThanOrEqual:
       case Lexeme::HexadecimalLiteral:
-      case Lexeme::Identifier:
       case Lexeme::Inequality:
       case Lexeme::LeftShift:
       case Lexeme::LessThanOrEqual:
@@ -593,7 +659,16 @@ parseSExpression(token_iterator &start, token_iterator last) {
       case Lexeme::StringLiteral:
       case Lexeme::TimesAssignment:
       case Lexeme::XorAssignment:
-        parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+        parts.emplace_back(toToken(iter));
+      break;
+
+      case Lexeme::Identifier:
+        if(auto ident = parseIdentifier(iter, last)) {
+          parts.emplace_back(ident);
+        }
+        else {
+          return nullptr;
+         }
       break;
 
       default:
@@ -641,7 +716,7 @@ static int parseRuleEncode(token_iterator &start, token_iterator last, concrete_
 static std::shared_ptr<ConcreteBoundElement> make_bound(
     concrete_vector::iterator start, token_iterator token) {
   concrete_vector parts(start, start + 2);
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*token));
+  parts.emplace_back(toToken(token));
   return std::make_shared<ConcreteBoundElement>(parts);
 }
 
@@ -670,7 +745,7 @@ parseRepetition(token_iterator &start, token_iterator last, std::shared_ptr<Conc
   RepetitionParseState state = RepetitionParseState::Ready;
 
   parts.push_back(elem);
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+  parts.emplace_back(toToken(start));
 
   while(state != RepetitionParseState::Error && ++iter != last) {
     if((*iter)->lexeme() == Lexeme::EndOfLine) {
@@ -681,18 +756,22 @@ parseRepetition(token_iterator &start, token_iterator last, std::shared_ptr<Conc
       case RepetitionParseState::Ready:
         switch((*iter)->lexeme()) {
           case Lexeme::Identifier:
+            parts.emplace_back(toIdentifier(iter));
+            state = RepetitionParseState::HasLowerBound;
+          break;
+
           case Lexeme::BinaryLiteral:
           case Lexeme::OctalLiteral:
           case Lexeme::DecimalLiteral:
           case Lexeme::HexadecimalLiteral:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             state = RepetitionParseState::HasLowerBound;
           break;
 
           case Lexeme::Plus:
           case Lexeme::Query:
           case Lexeme::Times:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             state = RepetitionParseState::HasBothBounds;
           break;
 
@@ -705,11 +784,11 @@ parseRepetition(token_iterator &start, token_iterator last, std::shared_ptr<Conc
 
       case RepetitionParseState::HasLowerBound:
         if((*iter)->lexeme() == Lexeme::Comma) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           state = RepetitionParseState::Comma;
         }
         else if((*iter)->lexeme() == Lexeme::CloseCurly) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           start = iter;
           return std::make_shared<ConcreteRepetitionElement>(parts);
         }
@@ -721,14 +800,18 @@ parseRepetition(token_iterator &start, token_iterator last, std::shared_ptr<Conc
 
       case RepetitionParseState::Comma:
         switch((*iter)->lexeme()) {
+          case Lexeme::Identifier:
+            parts.emplace_back(toIdentifier(iter));
+            state = RepetitionParseState::HasBothBounds;
+          break;
+
           case Lexeme::Plus:
           case Lexeme::Times:
-          case Lexeme::Identifier:
           case Lexeme::BinaryLiteral:
           case Lexeme::OctalLiteral:
           case Lexeme::DecimalLiteral:
           case Lexeme::HexadecimalLiteral:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             state = RepetitionParseState::HasBothBounds;
           break;
 
@@ -741,7 +824,7 @@ parseRepetition(token_iterator &start, token_iterator last, std::shared_ptr<Conc
 
       case RepetitionParseState::HasBothBounds:
         if((*iter)->lexeme() == Lexeme::CloseCurly) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           start = iter;
           return std::make_shared<ConcreteRepetitionElement>(parts);
         }
@@ -777,7 +860,7 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
   token_iterator  iter = start;
   MatchParseState state = MatchParseState::Ready;
 
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+  parts.emplace_back(toToken(start));
 
   while(state != MatchParseState::Error && ++iter != last) {
     if((*iter)->lexeme() == Lexeme::EndOfLine) {
@@ -787,7 +870,7 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
     switch(state) {
       case MatchParseState::Ready:
         if((*iter)->lexeme() == Lexeme::OpenParen) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           state = MatchParseState::InHead;
         }
         else {
@@ -798,8 +881,13 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
 
       case MatchParseState::InHead:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
-          state = MatchParseState::HasDiscriminant;
+          if(auto ident = parseIdentifier(iter, last)) {
+            parts.emplace_back(ident);
+            state = MatchParseState::HasDiscriminant;
+          }
+          else {
+            state = MatchParseState::Error;
+           }
         }
         else {
           unexpectedToken(*iter);
@@ -809,12 +897,8 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
 
       case MatchParseState::HasDiscriminant:
         if((*iter)->lexeme() == Lexeme::CloseParen) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           state = MatchParseState::HasHead;
-        }
-        else if((*iter)->lexeme() == Lexeme::Dot) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
-          state = MatchParseState::InHead;
         }
         else {
           unexpectedToken(*iter);
@@ -824,7 +908,7 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
 
       case MatchParseState::HasHead:
         if((*iter)->lexeme() == Lexeme::OpenCurly) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           state = MatchParseState::InBody;
         }
         else {
@@ -835,12 +919,11 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
 
       case MatchParseState::InBody:
         switch((*iter)->lexeme()) {
-          case Lexeme::Identifier:
           case Lexeme::BinaryLiteral:
           case Lexeme::DecimalLiteral:
           case Lexeme::HexadecimalLiteral:
           case Lexeme::OctalLiteral:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             state = MatchParseState::HasElement;
           break;
 
@@ -853,7 +936,7 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
 
       case MatchParseState::HasElement:
         if((*iter)->lexeme() == Lexeme::Bind) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           state = MatchParseState::Binding;
         }
         else {
@@ -875,17 +958,16 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
 
       case MatchParseState::HasBoundElement:
         switch((*iter)->lexeme()) {
-          case Lexeme::Identifier:
           case Lexeme::BinaryLiteral:
           case Lexeme::DecimalLiteral:
           case Lexeme::HexadecimalLiteral:
           case Lexeme::OctalLiteral:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             state = MatchParseState::HasElement;
           break;
 
           case Lexeme::CloseCurly:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             start = iter;
             return std::make_shared<ConcreteMatchElement>(parts);
           break;
@@ -908,18 +990,25 @@ parseRulePatternMatch(token_iterator &start, token_iterator last) {
       break;
 
       case MatchParseState::HasRepeatingElement:
-        if((*iter)->lexeme() == Lexeme::Identifier) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
-          state = MatchParseState::HasElement;
-        }
-        else if((*iter)->lexeme() == Lexeme::CloseCurly) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
-          start = iter;
-          return std::make_shared<ConcreteMatchElement>(parts);
-        }
-        else {
-          unexpectedToken(*iter);
-          state = MatchParseState::Error;
+        switch((*iter)->lexeme()) {
+          case Lexeme::BinaryLiteral:
+          case Lexeme::DecimalLiteral:
+          case Lexeme::HexadecimalLiteral:
+          case Lexeme::OctalLiteral:
+            parts.emplace_back(toToken(iter));
+            state = MatchParseState::HasElement;
+          break;
+
+          case Lexeme::CloseCurly:
+            parts.emplace_back(toToken(iter));
+            start = iter;
+            return std::make_shared<ConcreteMatchElement>(parts);
+          break;
+
+          default:
+            unexpectedToken(*iter);
+            state = MatchParseState::Error;
+          break;
         }
       break;
     }
@@ -949,7 +1038,7 @@ parseRulePatternList(token_iterator &start, token_iterator last) {
   token_iterator    iter = start;
   PatternParseState state = PatternParseState::Ready;
 
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+  parts.emplace_back(toToken(start));
 
   while(state != PatternParseState::Error && ++iter != last) {
     if((*iter)->lexeme() == Lexeme::EndOfLine) {
@@ -1025,7 +1114,7 @@ parseRulePatternList(token_iterator &start, token_iterator last) {
           break;
 
           case Lexeme::CloseParen:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             start = iter;
             return std::make_shared<ConcreteListElement>(parts);
           break;
@@ -1058,6 +1147,14 @@ parseRulePatternElement(token_iterator &start, token_iterator last) {
       case PatternParseState::Ready:
         switch((*iter)->lexeme()) {
           case Lexeme::Identifier:
+            if((base = parseIdentifier(iter, last))) {
+              state = PatternParseState::HasElement;
+            }
+            else {
+              state = PatternParseState::Error;
+             }
+          break;
+
           case Lexeme::BinaryLiteral:
           case Lexeme::BinaryPattern:
           case Lexeme::DecimalLiteral:
@@ -1066,7 +1163,7 @@ parseRulePatternElement(token_iterator &start, token_iterator last) {
           case Lexeme::OctalLiteral:
           case Lexeme::OctalPattern:
           case Lexeme::StringLiteral:
-            base = std::make_shared<ConcreteTokenElement>(*iter);
+            base = toToken(iter);
             state = PatternParseState::HasElement;
           break;
 
@@ -1120,7 +1217,7 @@ parseRulePatternElement(token_iterator &start, token_iterator last) {
           break;
 
           case Lexeme::Bind:
-            op = std::make_shared<ConcreteTokenElement>(*iter);
+            op = toToken(iter);
             state = PatternParseState::Binding;
           break;
 
@@ -1144,7 +1241,7 @@ parseRulePatternElement(token_iterator &start, token_iterator last) {
         if((*iter)->lexeme() == Lexeme::Identifier) {
           start = iter;
           return std::make_shared<ConcreteBoundElement>(
-            concrete_vector{base, op, std::make_shared<ConcreteTokenElement>(*iter)}
+            concrete_vector{base, op, toIdentifier(iter)}
           );
         }
         else {
@@ -1178,7 +1275,7 @@ parseRulePatternElement(token_iterator &start, token_iterator last) {
           break;
 
           case Lexeme::Bind:
-            op = std::make_shared<ConcreteTokenElement>(*iter);
+            op = toToken(iter);
             state = PatternParseState::Binding;
           break;
 
@@ -1202,7 +1299,7 @@ static int parseRulePattern(token_iterator &start, token_iterator last, concrete
   token_iterator    iter = start;
   PatternParseState state = PatternParseState::Ready;
 
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+  parts.emplace_back(toToken(start));
 
   while(state != PatternParseState::Error && ++iter != last) {
     if((*iter)->lexeme() == Lexeme::EndOfLine) {
@@ -1261,7 +1358,7 @@ static int parseRulePattern(token_iterator &start, token_iterator last, concrete
           break;
 
           case Lexeme::BitwiseOr:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             state = PatternParseState::Ready;
           break;
 
@@ -1305,7 +1402,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
   token_iterator    iter = start;
   StorageParseState state = StorageParseState::Ready;
 
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+  parts.emplace_back(toToken(start));
 
   while(state != StorageParseState::Error && ++iter != last) {
     if((*iter)->lexeme() == Lexeme::EndOfLine) {
@@ -1318,7 +1415,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
           state = StorageParseState::ListReady;
         }
         else if((*iter)->lexeme() == Lexeme::Identifier) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toIdentifier(iter));
           state = StorageParseState::SingleIdentifier;
         }
         else {
@@ -1330,7 +1427,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
       case StorageParseState::SingleIdentifier:
         switch((*iter)->lexeme()) {
           case Lexeme::Bind:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             state = StorageParseState::Binding;
           break;
 
@@ -1365,7 +1462,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
 
       case StorageParseState::ListReady:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toIdentifier(iter));
           state = StorageParseState::ListIdentifier;
         }
         else {
@@ -1376,11 +1473,11 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
 
       case StorageParseState::ListIdentifier:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toIdentifier(iter));
           state = StorageParseState::ListIdentifier;
         }
         else if((*iter)->lexeme() == Lexeme::Bind) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           state = StorageParseState::ListBinding;
         }
         else if((*iter)->lexeme() == Lexeme::CloseSquare) {
@@ -1407,7 +1504,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
 
       case StorageParseState::InList:
         if((*iter)->lexeme() == Lexeme::Identifier) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toIdentifier(iter));
           state = StorageParseState::ListIdentifier;
         }
         else if((*iter)->lexeme() == Lexeme::CloseSquare) {
@@ -1455,13 +1552,13 @@ static int parseRule(token_iterator &start, token_iterator last, concrete_vector
   token_iterator  iter = start;
   RuleParseState  state = RuleParseState::Ready;
 
-  parts.emplace_back(std::make_shared<ConcreteTokenElement>(*start));
+  parts.emplace_back(toIdentifier(start));
 
   while(state != RuleParseState::Error && ++iter != last) {
     switch(state) {
       case RuleParseState::Ready:
         if((*iter)->lexeme() == Lexeme::OpenCurly) {
-          parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+          parts.emplace_back(toToken(iter));
           state = RuleParseState::InBody;
         }
         else if((*iter)->lexeme() != Lexeme::EndOfLine) {
@@ -1477,7 +1574,7 @@ static int parseRule(token_iterator &start, token_iterator last, concrete_vector
           break;
 
           case Lexeme::CloseCurly:
-            parts.emplace_back(std::make_shared<ConcreteTokenElement>(*iter));
+            parts.emplace_back(toToken(iter));
             roots.emplace_back(std::make_shared<ConcreteRuleElement>(parts));
             start = ++iter;
             return 0;
@@ -1525,14 +1622,14 @@ static int parseRule(token_iterator &start, token_iterator last, concrete_vector
 }
 
 
-std::shared_ptr<ConcreteSyntaxTree> Parser::parse() {
+std::unique_ptr<ConcreteSyntaxTree> Parser::concreteParse(Tokenizer &tokenizer) {
   std::vector<std::shared_ptr<Token>> tokens;
   std::vector<std::shared_ptr<ConcreteElement>> roots;
 
   tokens.reserve(8192);
 
   // read in all the tokens
-  while(auto token = tokenizer->next()) {
+  while(auto token = tokenizer.next()) {
     tokens.push_back(token);
   }
 
@@ -1579,11 +1676,99 @@ std::shared_ptr<ConcreteSyntaxTree> Parser::parse() {
     }
   }
 
-  //if(errorFree){
-    return std::make_shared<ConcreteSyntaxTree>(roots);
-  //}
-  //else {
-  //  return nullptr;
-  //}
+  if(errorFree) {
+    return std::make_unique<ConcreteSyntaxTree>(roots);
+  }
+  else {
+    return nullptr;
+  }
+}
+
+
+static int convertNamespace(AbstractSyntaxTree &ast,
+                            ConcreteNamespaceElement &ns,
+                            std::shared_ptr<AbstractNamespaceElement> &ptr) {
+  return 1;
+}
+
+
+static int convertModule(AbstractSyntaxTree &ast,
+                         ConcreteModuleElement &mod,
+                         std::shared_ptr<AbstractNamespaceElement> &ptr) {
+  return 1;
+}
+
+
+static int convertImport(AbstractSyntaxTree &ast, ConcreteImportElement &imp) {
+  return 1;
+}
+
+
+static int convertAlias(AbstractSyntaxTree &ast, ConcreteAliasElement &alias) {
+  return 1;
+}
+
+
+static int convertRule(AbstractSyntaxTree &ast, ConcreteRuleElement &rule) {
+  return 1;
+}
+
+
+std::unique_ptr<AbstractSyntaxTree>
+Parser::abstractParse(ConcreteSyntaxTree &concrete) {
+  auto tree  = std::make_unique<AbstractSyntaxTree>();
+  auto space = tree->currentNamespace();
+  auto iter  = concrete.begin(), end = concrete.end();
+  bool errorFree = true;
+
+  while(errorFree && iter != end) {
+    switch((*iter)->type()) {
+      case ConcreteElementType::Comment:
+      case ConcreteElementType::Documentation:
+        // ignore this
+      break;
+
+      case ConcreteElementType::Namespace:
+        errorFree = !convertNamespace(*tree, as<ConcreteNamespaceElement>(iter), space);
+      break;
+
+      case ConcreteElementType::Module:
+        errorFree = !convertModule(*tree, as<ConcreteModuleElement>(iter), space);
+      break;
+
+      case ConcreteElementType::Import:
+        errorFree = !convertImport(*tree, as<ConcreteImportElement>(iter));
+      break;
+
+      case ConcreteElementType::Alias:
+        errorFree = !convertAlias(*tree, as<ConcreteAliasElement>(iter));
+      break;
+
+      case ConcreteElementType::Rule:
+        errorFree = !convertRule(*tree, as<ConcreteRuleElement>(iter));
+      break;
+
+      default:
+        std::cout << **iter << std::endl;
+      break;
+    }
+  }
+
+  if(errorFree) {
+    return tree;
+  }
+  else {
+    return nullptr;
+  }
+}
+
+
+std::unique_ptr<AbstractSyntaxTree> Parser::parse(Tokenizer &tokenizer) {
+  if(auto concrete = concreteParse(tokenizer)) {
+    return abstractParse(*concrete);
+  }
+  else {
+    return nullptr;
+  }
 }
 

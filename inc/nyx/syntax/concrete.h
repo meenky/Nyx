@@ -51,8 +51,7 @@ class ConcreteElement {
 
     virtual std::vector<std::shared_ptr<ConcreteElement>>::size_type size() const;
 
-    virtual bool isValid() const = 0;
-    virtual bool is(Lexeme) const;
+    virtual bool is(Lexeme) const = 0;
 
     inline bool is(ConcreteElementType type) const {
       return kind == type;
@@ -87,7 +86,6 @@ class ConcreteTokenElement: public ConcreteElement {
     virtual std::ostream &print(std::ostream &os) const;
     virtual std::ostream &debug(std::ostream &os) const;
 
-    virtual bool isValid() const;
     virtual bool is(Lexeme) const;
 
   private:
@@ -104,25 +102,24 @@ class ConcreteCompoundElement: public ConcreteElement {
     typedef std::vector<std::shared_ptr<ConcreteElement>>::reverse_iterator reverse_iterator;
     typedef std::vector<std::shared_ptr<ConcreteElement>>::const_reverse_iterator const_reverse_iterator;
 
-    inline iterator               begin()         { children.begin(); }
-    inline iterator               end()           { children.end();   }
-    inline const_iterator         begin()   const { children.begin(); }
-    inline const_iterator         end()     const { children.end();   }
-    inline const_iterator         cbegin()  const { children.begin(); }
-    inline const_iterator         cend()    const { children.end();   }
-    inline reverse_iterator       rbegin()        { children.begin(); }
-    inline reverse_iterator       rend()          { children.end();   }
-    inline const_reverse_iterator rbegin()  const { children.begin(); }
-    inline const_reverse_iterator rend()    const { children.end();   }
-    inline const_reverse_iterator crbegin() const { children.begin(); }
-    inline const_reverse_iterator crend()   const { children.end();   }
+    inline iterator               begin()         { children.begin();   }
+    inline iterator               end()           { children.end();     }
+    inline const_iterator         begin()   const { children.begin();   }
+    inline const_iterator         end()     const { children.end();     }
+    inline const_iterator         cbegin()  const { children.cbegin();  }
+    inline const_iterator         cend()    const { children.cend();    }
+    inline reverse_iterator       rbegin()        { children.rbegin();  }
+    inline reverse_iterator       rend()          { children.rend();    }
+    inline const_reverse_iterator rbegin()  const { children.rbegin();  }
+    inline const_reverse_iterator rend()    const { children.rend();    }
+    inline const_reverse_iterator crbegin() const { children.crbegin(); }
+    inline const_reverse_iterator crend()   const { children.crend();   }
 
     virtual std::vector<std::shared_ptr<ConcreteElement>>::size_type size() const;
 
     virtual std::ostream &print(std::ostream &os) const;
     virtual std::ostream &debug(std::ostream &os) const;
 
-    virtual bool isValid() const;
     virtual bool is(Lexeme) const;
 
   protected:
@@ -143,7 +140,7 @@ class ConcreteIdentifierElement: public ConcreteCompoundElement {
     ConcreteIdentifierElement(const std::vector<std::shared_ptr<ConcreteElement>> &);
     virtual ~ConcreteIdentifierElement();
 
-    virtual bool isValid() const;
+    virtual std::ostream &print(std::ostream &os) const;
 };
 
 
@@ -151,8 +148,6 @@ class ConcreteSexprElement: public ConcreteCompoundElement {
   public:
     ConcreteSexprElement(const std::vector<std::shared_ptr<ConcreteElement>> &);
     virtual ~ConcreteSexprElement();
-
-    virtual bool isValid() const;
 };
 
 
@@ -162,8 +157,6 @@ class ConcreteAliasElement: public ConcreteCompoundElement {
     virtual ~ConcreteAliasElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -173,8 +166,6 @@ class ConcreteBoundElement: public ConcreteCompoundElement {
     virtual ~ConcreteBoundElement();
 
     //virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -184,8 +175,6 @@ class ConcreteCommentElement: public ConcreteCompoundElement {
     virtual ~ConcreteCommentElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 
   protected:
     ConcreteCommentElement(ConcreteElementType, const std::vector<std::shared_ptr<ConcreteElement>> &);
@@ -198,8 +187,6 @@ class ConcreteDecodeElement: public ConcreteCompoundElement {
     virtual ~ConcreteDecodeElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -207,8 +194,6 @@ class ConcreteDocumentationElement: public ConcreteCommentElement {
   public:
     ConcreteDocumentationElement(const std::vector<std::shared_ptr<ConcreteElement>> &);
     virtual ~ConcreteDocumentationElement();
-
-    virtual bool isValid() const;
 };
 
 
@@ -218,8 +203,6 @@ class ConcreteEncodeElement: public ConcreteCompoundElement {
     virtual ~ConcreteEncodeElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -229,8 +212,6 @@ class ConcreteImportElement: public ConcreteCompoundElement {
     virtual ~ConcreteImportElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -240,8 +221,6 @@ class ConcreteListElement: public ConcreteCompoundElement {
     virtual ~ConcreteListElement();
 
     //virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -251,8 +230,6 @@ class ConcreteMatchElement: public ConcreteCompoundElement {
     virtual ~ConcreteMatchElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -262,8 +239,6 @@ class ConcreteModuleElement: public ConcreteCompoundElement {
     virtual ~ConcreteModuleElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -273,8 +248,6 @@ class ConcreteNamespaceElement: public ConcreteCompoundElement {
     virtual ~ConcreteNamespaceElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -284,8 +257,6 @@ class ConcretePatternElement: public ConcreteCompoundElement {
     virtual ~ConcretePatternElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -294,9 +265,7 @@ class ConcreteRepetitionElement: public ConcreteCompoundElement {
     ConcreteRepetitionElement(const std::vector<std::shared_ptr<ConcreteElement>> &);
     virtual ~ConcreteRepetitionElement();
 
-    //virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
+    virtual std::ostream &print(std::ostream &os) const;
 };
 
 
@@ -306,8 +275,6 @@ class ConcreteRuleElement: public ConcreteCompoundElement {
     virtual ~ConcreteRuleElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -317,8 +284,6 @@ class ConcreteStorageElement: public ConcreteCompoundElement {
     virtual ~ConcreteStorageElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 
@@ -328,8 +293,6 @@ class ConcreteValidateElement: public ConcreteCompoundElement {
     virtual ~ConcreteValidateElement();
 
     virtual std::ostream &print(std::ostream &os) const;
-
-    virtual bool isValid() const;
 };
 
 

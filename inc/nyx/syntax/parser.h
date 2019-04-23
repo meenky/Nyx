@@ -1,5 +1,6 @@
 #pragma once
 
+#include "nyx/syntax/abstract.h"
 #include "nyx/syntax/concrete.h"
 #include "nyx/syntax/tokenizer.h"
 
@@ -12,16 +13,16 @@ namespace nyx {
 
 class Parser {
   public:
-    Parser(std::shared_ptr<Tokenizer> tokenizer);
+    Parser() = delete;
 
-    Parser(Parser &&) = delete;
-    Parser(const Parser &) = delete;
-    Parser &operator=(const Parser &) = delete;
+    static std::unique_ptr<ConcreteSyntaxTree>
+    concreteParse(Tokenizer &tokenizer);
 
-    std::shared_ptr<nyx::syntax::ConcreteSyntaxTree> parse();
+    static std::unique_ptr<AbstractSyntaxTree>
+    abstractParse(ConcreteSyntaxTree &concrete);
 
-  private:
-    std::shared_ptr<Tokenizer> tokenizer;
+    static std::unique_ptr<AbstractSyntaxTree>
+    parse(Tokenizer &tokenizer);
 };
 
 

@@ -5,14 +5,14 @@
 
 int main(int argc, char **argv) {
   for(int arg = 1; arg < argc; ++arg) {
-    auto input = std::make_shared<nyx::syntax::Tokenizer>(std::make_shared<std::string>(argv[arg]));
+    nyx::syntax::Tokenizer input(std::make_shared<std::string>(argv[arg]));
 
-    if(!*input) {
+    if(!input) {
       std::cerr << "Failure to open " << argv[arg] << " for reading" << std::endl;
       continue;
     }
 
-    if(auto tree = nyx::syntax::Parser(input).parse()) {
+    if(auto tree = nyx::syntax::Parser::parse(input)) {
       tree->print(std::cout);
     }
   }
