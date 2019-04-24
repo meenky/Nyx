@@ -222,6 +222,12 @@
 
 
 #++
+# A dynamically sized array used to hold multiple values when the length is variable.
+#--
+@alias __builtin_vector__ vector
+
+
+#++
 # A module containing text formats used by nyx.
 #--
 @module nyx.text

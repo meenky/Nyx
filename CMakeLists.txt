@@ -18,6 +18,7 @@ LIST(
  	NYX_LIB_SOURCES
  	src/syntax/token.cpp
  	src/syntax/parser.cpp
+	src/syntax/abstract.cpp
 	src/syntax/concrete.cpp
 	src/syntax/tokenizer.cpp
 )
