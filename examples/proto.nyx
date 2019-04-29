@@ -46,9 +46,12 @@ length_delim {
 }
 
 # single byte bit field that denotes the field number and type
-key {
-  pattern: 0b*****=>number 0b***=>type
-  storage: [number=>i8 type=>i8]
+field_header {
+  pattern: base128=>raw
+  decode:  ((= number (>> raw.val 3))
+            (= type   (&  raw.val 7)))
+  encode:  (= raw.val (| (<< number 3) (& type 7)))
+  storage: [number=>u64 type=>i8]
 }
 
 # fixed length eight byte value
@@ -65,13 +68,13 @@ fixed32 {
 
 # combination of a key and a value
 field {
-  pattern: key @match(key.type) {
+  pattern: field_header=>header @match(header.type) {
     0 => base128
     1 => fixed64
     2 => length_delim
     5 => fixed32
   }=>value
-  storage: [key value]
+  storage: [header value]
 }
 
 # an entire message
