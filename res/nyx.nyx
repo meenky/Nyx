@@ -62,7 +62,7 @@
 # @seq A byte sequence.
 # @val The value to append to the byte sequence.
 #--
-@alias __builtin_concat__ append
+@alias __builtin_append__ append
 
 
 #++
@@ -222,29 +222,13 @@
 
 
 #++
+# A dynamically sized character array for holding textual data.
+#--
+@alias __builtin_string string
+
+
+#++
 # A dynamically sized array used to hold multiple values when the length is variable.
 #--
 @alias __builtin_vector__ vector
 
-
-#++
-# A module containing text formats used by nyx.
-#--
-@module nyx.text
-
-#++
-# An ASCII character.
-#--
-ascii {
-  pattern: 0b0*******
-}
-
-#++
-# A UTF-8 codepoint.
-#--
-utf-8 {
-  pattern: ascii |
-           0b110***** 0b10****** |
-           0b1110**** 0b10****** 0b10****** |
-           0b11110*** 0b10****** 0b10****** 0b10******
-}
