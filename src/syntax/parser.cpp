@@ -14,6 +14,12 @@ static CONCRETE &as(concrete_vector::iterator iter) {
 }
 
 
+template<typename CONCRETE>
+static CONCRETE &as(std::shared_ptr<ConcreteElement> ptr) {
+  return *std::dynamic_pointer_cast<CONCRETE>(ptr);
+}
+
+
 static std::shared_ptr<ConcreteTokenElement> toToken(token_iterator iter) {
   return std::make_shared<ConcreteTokenElement>(*iter);
 }
@@ -64,6 +70,22 @@ static void unexpectedToken(std::shared_ptr<Token> token) {
   }
   std::cerr << '^' << std::endl;
   std::cerr << "Unexpected Token '" << token->text() << "' at " <<
+               token->fileName() << ':' << token->lineNumber() << std::endl;
+}
+
+
+static void illegalComplexIdentifier(ConcreteIdentifierElement &ident) {
+  auto token = as<ConcreteTokenElement>(ident[0]).token();
+
+  std::cerr << token->fullLine() << std::endl;
+  if(token->columnNumber() > 0) {
+    auto old = std::cerr.width();
+    std::cerr.width(token->columnNumber());
+    std::cerr << ' ';
+    std::cerr.width(old);
+  }
+  std::cerr << '^' << std::endl;
+  std::cerr << "Illegal compound identifier '" << ident << "' at " <<
                token->fileName() << ':' << token->lineNumber() << std::endl;
 }
 
@@ -1412,6 +1434,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
     switch(state) {
       case StorageParseState::Ready:
         if((*iter)->lexeme() == Lexeme::OpenSquare) {
+          parts.emplace_back(toToken(iter));
           state = StorageParseState::ListReady;
         }
         else if((*iter)->lexeme() == Lexeme::Identifier) {
@@ -1481,6 +1504,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
           state = StorageParseState::ListBinding;
         }
         else if((*iter)->lexeme() == Lexeme::CloseSquare) {
+          parts.emplace_back(toToken(iter));
           rule.emplace_back(std::make_shared<ConcreteStorageElement>(parts));
           start = iter;
           return 0;
@@ -1508,6 +1532,7 @@ static int parseRuleStorage(token_iterator &start, token_iterator last, concrete
           state = StorageParseState::ListIdentifier;
         }
         else if((*iter)->lexeme() == Lexeme::CloseSquare) {
+          parts.emplace_back(toToken(iter));
           rule.emplace_back(std::make_shared<ConcreteStorageElement>(parts));
           start = iter;
           return 0;
@@ -1685,32 +1710,766 @@ std::unique_ptr<ConcreteSyntaxTree> Parser::concreteParse(Tokenizer &tokenizer) 
 }
 
 
+static std::shared_ptr<AbstractIdentifierElement>
+convertIdentifier(ConcreteTokenElement &concrete) {
+  return std::make_shared<AbstractIdentifierElement>(concrete.token());
+}
+
+
+static std::shared_ptr<AbstractIdentifierElement>
+convertIdentifier(ConcreteIdentifierElement &concrete) {
+  if(concrete.size() == 1) {
+    return std::make_shared<AbstractIdentifierElement>(
+             as<ConcreteTokenElement>(concrete[0]).token()
+           );
+  }
+  else if(concrete.size() & 1) {
+    std::vector<std::shared_ptr<Token>> tmp;
+    tmp.reserve((concrete.size() + 1) / 2);
+
+    for(int i = 0; i < concrete.size(); i += 2) {
+      tmp.emplace_back(as<ConcreteTokenElement>(concrete[i]).token());
+    }
+
+    return std::make_shared<AbstractIdentifierElement>(tmp);
+  }
+
+  return nullptr;
+}
+
+
 static int convertNamespace(AbstractSyntaxTree &ast,
                             ConcreteNamespaceElement &ns,
                             std::shared_ptr<AbstractNamespaceElement> &ptr) {
-  return 1;
+  if(auto ident = convertIdentifier(as<ConcreteIdentifierElement>(ns[1]))) {
+    if(ast.addNamespace(ident, true)) {
+      ptr = ast.currentNamespace();
+      return 0;
+    }
+  }
+
+  return -1;
 }
 
 
 static int convertModule(AbstractSyntaxTree &ast,
                          ConcreteModuleElement &mod,
                          std::shared_ptr<AbstractNamespaceElement> &ptr) {
-  return 1;
+  if(auto ident = convertIdentifier(as<ConcreteIdentifierElement>(mod[1]))) {
+    if(ast.addNamespace(ident, false)) {
+      ptr = ast.currentNamespace();
+      return 0;
+    }
+  }
+
+  return -1;
 }
 
 
 static int convertImport(AbstractSyntaxTree &ast, ConcreteImportElement &imp) {
-  return 1;
+  switch(imp.size()) {
+    case 2: // simple import
+      if(auto ident = convertIdentifier(as<ConcreteIdentifierElement>(imp[1]))) {
+        ast.addImport(AbstractImportElement::importModule(ident));
+        return 0;
+      }
+    break;
+
+    case 4: // single element import or alias
+      if(auto ident1 = convertIdentifier(as<ConcreteIdentifierElement>(imp[1]))) {
+        if(auto ident2 = convertIdentifier(as<ConcreteIdentifierElement>(imp[3]))) {
+          auto &joiner = as<ConcreteTokenElement>(imp[2]).token()->text();
+          if(joiner == "as") {
+            ast.addImport(AbstractImportElement::importModule(ident1, ident2));
+            return 0;
+          }
+          else if(joiner == "from") {
+            ast.addImport(AbstractImportElement::importElement(ident1, ident2));
+            return 0;
+          }
+        }
+      }
+    break;
+
+    case 6: // single element import with alias
+      if(auto ident1 = convertIdentifier(as<ConcreteIdentifierElement>(imp[1]))) {
+        if(auto ident2 = convertIdentifier(as<ConcreteIdentifierElement>(imp[3]))) {
+          if(auto ident3 = convertIdentifier(as<ConcreteIdentifierElement>(imp[5]))) {
+            ast.addImport(AbstractImportElement::importElement(ident1, ident2, ident3));
+            return 0;
+          }
+        }
+      }
+    break;
+  }
+
+  return -1;
 }
 
 
 static int convertAlias(AbstractSyntaxTree &ast, ConcreteAliasElement &alias) {
-  return 1;
+  if(auto original = convertIdentifier(as<ConcreteIdentifierElement>(alias[1]))) {
+    if(auto rename = convertIdentifier(as<ConcreteIdentifierElement>(alias[2]))) {
+      ast.addAlias(std::make_shared<AbstractAliasElement>(original, rename));
+      return 0;
+    }
+  }
+
+  return -1;
+}
+
+
+std::shared_ptr<AbstractSexpr> convertSexpr(ConcreteSexprElement &src) {
+  if(src.size() == 2) {
+    return std::make_shared<AbstractSexpr>();
+  }
+  else if(src.size() > 2) {
+    AbstractSexpr head, *tail = &head;
+
+    for(auto iter = src.begin() + 1, end = src.end() - 1; iter != end; ++iter) {
+      switch((*iter)->type()) {
+        case ConcreteElementType::Identifier:
+          tail->setNext(std::make_shared<AbstractSexpr>(
+            convertIdentifier(as<ConcreteIdentifierElement>(*iter))
+          ));
+        break;
+
+        case ConcreteElementType::SExpr:
+          if(auto sub = convertSexpr(as<ConcreteSexprElement>(*iter))) {
+            tail->setNext(std::make_shared<AbstractSexpr>(sub));
+          }
+          else {
+            return nullptr;
+          }
+        break;
+
+        case ConcreteElementType::Token:
+          tail->setNext(std::make_shared<AbstractSexpr>(as<ConcreteTokenElement>(*iter).token()));
+        break;
+      }
+
+      tail = tail->next().get();
+    }
+
+    return head.next();
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractCodeSnippet> convertDecode(ConcreteDecodeElement &decode) {
+  if(auto sexpr = convertSexpr(as<ConcreteSexprElement>(decode[1]))) {
+    return std::make_shared<AbstractCodeSnippet>(sexpr);
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractCodeSnippet> convertEncode(ConcreteEncodeElement &encode) {
+  if(auto sexpr = convertSexpr(as<ConcreteSexprElement>(encode[1]))) {
+    return std::make_shared<AbstractCodeSnippet>(sexpr);
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractPatternElement>
+convertCompoundPattern(ConcreteListElement &list,
+                       std::shared_ptr<Token> lower,
+                       std::shared_ptr<Token> upper,
+                       std::shared_ptr<Token> bind);
+
+
+static std::shared_ptr<Token> convertTokenOrIdentifier(ConcreteElement &concrete) {
+  if(concrete.type() == ConcreteElementType::Token) {
+    return reinterpret_cast<ConcreteTokenElement *>(&concrete)->token();
+  }
+  else if(concrete.type() == ConcreteElementType::Identifier) {
+    auto name = reinterpret_cast<ConcreteIdentifierElement *>(&concrete);
+
+    if(name->size() == 1) {
+      return as<ConcreteTokenElement>((*name)[0]).token();
+    }
+    else {
+      illegalComplexIdentifier(*name);
+    }
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractMatchCaseElement>
+convertMatchCase(ConcreteBoundElement &binding) {
+  if(binding.size() == 3) {
+    auto key = binding[0], value = binding[2];
+
+    if(key   && key->type()   == ConcreteElementType::Token &&
+       value && value->type() == ConcreteElementType::Token) {
+      auto key_token    = as<ConcreteTokenElement>(key).token();
+      auto &value_token = as<ConcreteTokenElement>(value);
+
+      if(key_token->isNumeric() || key_token->is(Lexeme::StringLiteral)) {
+        if(value_token.token()->is(Lexeme::Identifier)) {
+          return std::make_shared<AbstractMatchCaseElement>(
+            key_token,
+            convertIdentifier(value_token)
+          );
+        }
+        else {
+          unexpectedToken(value_token.token());
+        }
+      }
+      else {
+        unexpectedToken(key_token);
+      }
+    }
+    else {
+      std::cerr << "Malformed match case" << std::endl;
+    }
+  }
+  else {
+    std::cerr << "Invalid match case size" << std::endl;
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractPatternElement>
+convertMatchPattern(ConcreteMatchElement &match,
+                    std::shared_ptr<Token> lower,
+                    std::shared_ptr<Token> upper,
+                    std::shared_ptr<Token> bound) {
+  std::vector<std::shared_ptr<AbstractMatchCaseElement>> tmp;
+
+  if(match.size() > 6) {
+    if(auto discriminant = convertIdentifier(as<ConcreteIdentifierElement>(match[2]))) {
+      for(decltype(match.size()) idx = 5, end = match.size() - 1; idx < end; ++idx) {
+        if(auto bind = match[idx]) {
+          if(auto element = convertMatchCase(as<ConcreteBoundElement>(bind))) {
+            tmp.emplace_back(element);
+          }
+          else {
+            return nullptr;
+          }
+        }
+        else {
+          std::cerr << "NULL match case" << std::endl;
+          return nullptr;
+        }
+      }
+
+      return std::make_shared<AbstractMatchElement>(discriminant, tmp, lower, upper, bound);
+    }
+    else {
+      std::cerr << "Invalid match discriminant" << std::endl;
+    }
+  }
+  else {
+    std::cerr << "Empty match body" << std::endl;
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractPatternElement>
+convertMatchPattern(ConcreteMatchElement &match, std::shared_ptr<Token> bind) {
+  return convertMatchPattern(match, nullptr, nullptr, bind);
+}
+
+
+static std::shared_ptr<AbstractPatternElement>
+convertMatchPattern(ConcreteMatchElement &match) {
+  return convertMatchPattern(match, nullptr);
+}
+
+
+static std::shared_ptr<AbstractPatternElement>
+convertRepetitionPattern(ConcreteRepetitionElement &rep, std::shared_ptr<Token> bind) {
+  if(rep.size() == 4) {
+    auto element = rep[0], lower = rep[2];
+
+    if(element && lower) {
+      if(auto min = convertTokenOrIdentifier(*lower)) {
+
+        switch(element->type()) {
+          case ConcreteElementType::Identifier:
+            return std::make_shared<AbstractSimplePatternElement>(
+              convertIdentifier(as<ConcreteIdentifierElement>(element)),
+              min,
+              nullptr,
+              bind
+            );
+          break;
+
+          case ConcreteElementType::List:
+            return convertCompoundPattern(as<ConcreteListElement>(element), min, nullptr, bind);
+          break;
+
+          case ConcreteElementType::Token:
+            return std::make_shared<AbstractSimplePatternElement>(
+              as<ConcreteTokenElement>(element).token(),
+              min,
+              nullptr,
+              bind
+            );
+          break;
+
+          default:
+            std::cerr << "Unexpected CST type: " << stringify(element->type()) << std::endl;
+          break;
+        }
+      }
+    }
+  }
+  else if(rep.size() == 6) {
+    auto element = rep[0], lower = rep[2], upper = rep[4];
+
+    if(element && lower && upper) {
+      auto min = convertTokenOrIdentifier(*lower);
+      auto max = convertTokenOrIdentifier(*upper);
+
+      if(min && max) {
+        switch(element->type()) {
+          case ConcreteElementType::Identifier:
+            return std::make_shared<AbstractSimplePatternElement>(
+              convertIdentifier(as<ConcreteIdentifierElement>(element)),
+              min,
+              max,
+              bind
+            );
+          break;
+
+          case ConcreteElementType::List:
+            return convertCompoundPattern(as<ConcreteListElement>(element), min, max, bind);
+          break;
+
+          case ConcreteElementType::Token:
+            return std::make_shared<AbstractSimplePatternElement>(
+              as<ConcreteTokenElement>(element).token(),
+              min,
+              max,
+              bind
+            );
+          break;
+
+          default:
+            std::cerr << "Unexpected CST type: " << stringify(element->type()) << std::endl;
+          break;
+        }
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractPatternElement> convertBoundPattern(ConcreteBoundElement &bound) {
+  if(bound.size() == 3) {
+    auto element = bound[0], ident = bound[2];
+
+    if(element && ident) {
+      if(auto token = convertTokenOrIdentifier(*ident)) {
+        switch(element->type()) {
+          case ConcreteElementType::Identifier:
+            return std::make_shared<AbstractSimplePatternElement>(
+              convertIdentifier(as<ConcreteIdentifierElement>(element)),
+              nullptr,
+              nullptr,
+              token
+            );
+          break;
+
+          case ConcreteElementType::Repetition:
+            return convertRepetitionPattern(
+              as<ConcreteRepetitionElement>(element),
+              token
+            );
+          break;
+
+          case ConcreteElementType::List:
+            return convertCompoundPattern(as<ConcreteListElement>(element), nullptr, nullptr, token);
+          break;
+
+          case ConcreteElementType::Match:
+            return convertMatchPattern(as<ConcreteMatchElement>(element), token);
+          break;
+
+          case ConcreteElementType::Token:
+            return std::make_shared<AbstractSimplePatternElement>(
+              as<ConcreteTokenElement>(element).token(),
+              nullptr,
+              nullptr,
+              token
+            );
+          break;
+
+          default:
+            std::cerr << "Unexpected CST type: " << stringify(element->type()) << std::endl;
+          break;
+        }
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractPatternElement>
+convertRepetitionPattern(ConcreteRepetitionElement &rep) {
+  return convertRepetitionPattern(rep, nullptr);
+}
+
+
+static std::shared_ptr<AbstractPatternElement> convertCompoundPattern(ConcreteListElement &list) {
+  return convertCompoundPattern(list, nullptr, nullptr, nullptr);
+}
+
+
+static std::shared_ptr<AbstractPatternElement>
+convertCompoundPattern(ConcreteListElement &list,
+                       std::shared_ptr<Token> lower,
+                       std::shared_ptr<Token> upper,
+                       std::shared_ptr<Token> bind) {
+  if(list.size() > 2) {
+    std::vector<std::shared_ptr<AbstractPatternElement>> tmp;
+
+    for(decltype(list.size()) idx = 1, end = list.size() - 1; idx < end; ++idx) {
+      auto element = list[idx];
+
+      switch(element->type()) {
+        case ConcreteElementType::Bound:
+          if(auto bound = convertBoundPattern(as<ConcreteBoundElement>(element))) {
+            tmp.emplace_back(bound);
+          }
+          else {
+            return nullptr;
+          }
+        break;
+
+        case ConcreteElementType::Identifier:
+          tmp.emplace_back(std::make_shared<AbstractSimplePatternElement>(
+            convertIdentifier(as<ConcreteIdentifierElement>(element))
+          ));
+        break;
+
+        case ConcreteElementType::List:
+          if(auto list = convertCompoundPattern(as<ConcreteListElement>(element))) {
+            tmp.emplace_back(list);
+          }
+          else {
+            return nullptr;
+          }
+        break;
+
+        case ConcreteElementType::Match:
+          if(auto match = convertMatchPattern(as<ConcreteMatchElement>(element))) {
+            tmp.emplace_back(match);
+          }
+          else {
+            return nullptr;
+          }
+        break;
+
+        case ConcreteElementType::Repetition:
+          if(auto repetition = convertRepetitionPattern(as<ConcreteRepetitionElement>(element))) {
+            tmp.emplace_back(repetition);
+          }
+          else {
+            return nullptr;
+          }
+        break;
+
+        case ConcreteElementType::Token: {
+          auto token = as<ConcreteTokenElement>(element).token();
+
+          if(token->isNumeric(true) || token->is(Lexeme::StringLiteral)) {
+            tmp.emplace_back(std::make_shared<AbstractSimplePatternElement>(token));
+          }
+          else {
+            unexpectedToken(token);
+            return nullptr;
+          }
+        } break;
+
+        default:
+          std::cerr << "Unexpected CST type: " << stringify(element->type()) << std::endl;
+        break;
+      }
+    }
+
+    if(tmp.size()) {
+      return std::make_shared<AbstractCompoundPatternElement>(tmp, lower, upper, bind);
+    }
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractPatternList> convertPattern(ConcretePatternElement &pattern) {
+  auto retVal = std::make_shared<AbstractPatternList>();
+  std::vector<std::shared_ptr<AbstractPatternElement>> tmp;
+
+  for(auto iter = pattern.begin() + 1, end = pattern.end(); iter != end; ++iter) {
+    switch((*iter)->type()) {
+      case ConcreteElementType::Bound:
+        if(auto bound = convertBoundPattern(as<ConcreteBoundElement>(iter))) {
+          tmp.emplace_back(bound);
+        }
+        else {
+          return nullptr;
+        }
+      break;
+
+      case ConcreteElementType::Identifier:
+        tmp.emplace_back(std::make_shared<AbstractSimplePatternElement>(
+          convertIdentifier(as<ConcreteIdentifierElement>(iter))
+        ));
+      break;
+
+      case ConcreteElementType::List:
+        if(auto list = convertCompoundPattern(as<ConcreteListElement>(iter))) {
+          tmp.emplace_back(list);
+        }
+        else {
+          return nullptr;
+        }
+      break;
+
+      case ConcreteElementType::Match:
+        if(auto match = convertMatchPattern(as<ConcreteMatchElement>(iter))) {
+          tmp.emplace_back(match);
+        }
+        else {
+          return nullptr;
+        }
+      break;
+
+      case ConcreteElementType::Repetition:
+        if(auto rep = convertRepetitionPattern(as<ConcreteRepetitionElement>(iter))) {
+          tmp.emplace_back(rep);
+        }
+        else {
+          return nullptr;
+        }
+      break;
+
+      case ConcreteElementType::Token: {
+        auto token = as<ConcreteTokenElement>(iter).token();
+
+        if(token->text() == "|") {
+          if(tmp.size() == 1) {
+            retVal->add(tmp[0]);
+            tmp.clear();
+          }
+          else if(tmp.size() > 1) {
+            retVal->add(std::make_shared<AbstractCompoundPatternElement>(tmp));
+            tmp.clear();
+          }
+          else {
+            unexpectedToken(token);
+            return nullptr;
+          }
+        }
+        else if(token->isNumeric(true) || token->is(Lexeme::StringLiteral)) {
+          tmp.emplace_back(std::make_shared<AbstractSimplePatternElement>(token));
+        }
+        else {
+          unexpectedToken(token);
+          return nullptr;
+        }
+      } break;
+    }
+  }
+
+  if(tmp.size() == 1) {
+    retVal->add(tmp[0]);
+  }
+  else if(tmp.size() > 1) {
+    retVal->add(std::make_shared<AbstractCompoundPatternElement>(tmp));
+  }
+
+  return retVal;
+}
+
+
+static std::shared_ptr<AbstractStorageElement>
+convertStorageElement(std::shared_ptr<ConcreteElement> element) {
+  switch(element->type()) {
+    case ConcreteElementType::Bound: {
+      auto &bound = as<ConcreteBoundElement>(element);
+
+      if(auto ident = convertIdentifier(as<ConcreteIdentifierElement>(bound[0]))) {
+        return std::make_shared<AbstractStorageElement>(
+          ident,
+          convertIdentifier(as<ConcreteTokenElement>(bound[2]))
+        );
+      }
+    } break;
+
+    case ConcreteElementType::Identifier:
+      if(auto ident = convertIdentifier(as<ConcreteIdentifierElement>(element))) {
+        return std::make_shared<AbstractStorageElement>(ident);
+      }
+    break;
+
+    default:
+      std::cerr << "Invalid CST type: " << stringify(element->type()) << std::endl;
+    break;
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractStorageList> convertStorage(ConcreteStorageElement &storage) {
+  if(storage.size() == 2) {
+    auto single = storage[1];
+    if(single->type() == ConcreteElementType::Identifier) {
+      auto &ident = as<ConcreteIdentifierElement>(single);
+      if(ident.size() == 1 && as<ConcreteTokenElement>(ident[0]).token()->text() == "none") {
+        return std::make_shared<AbstractStorageList>(); //empty list implies no storage at all
+      }
+      else if(auto element = convertStorageElement(single)) {
+        return std::make_shared<AbstractStorageList>(element);
+      }
+    }
+    else if(single->type() == ConcreteElementType::Bound) {
+      if(auto element = convertStorageElement(single)) {
+        return std::make_shared<AbstractStorageList>(element);
+      }
+    }
+    else {
+      std::cerr << "Invalid CST type: " << stringify(single->type()) << std::endl;
+    }
+  }
+  else if(storage.size() > 3) {
+    auto list = std::make_shared<AbstractStorageList>();
+    auto count = storage.size() - 1;
+
+    for(decltype(count) idx = 2; idx < count; ++idx) {
+      if(auto element = convertStorageElement(storage[idx])) {
+        list->add(element);
+      }
+      else {
+        return nullptr;
+      }
+    }
+
+    return list;
+  }
+
+  return nullptr;
+}
+
+
+static std::shared_ptr<AbstractCodeSnippet> convertValidate(ConcreteValidateElement &validate) {
+  if(auto sexpr = convertSexpr(as<ConcreteSexprElement>(validate[1]))) {
+    return std::make_shared<AbstractCodeSnippet>(sexpr);
+  }
+
+  return nullptr;
+}
+
+
+static void duplicate(ConcreteCompoundElement &concrete, AbstractElement &abstract, const char *name) {
+  std::cerr << "Duplicate "    << name << " at " << concrete.file() << ':' <<
+               concrete.line() << '.'  << concrete.column() << std::endl <<
+               "Previously seen at "   << abstract.file()   << ':' <<
+               abstract.line() << '.'  << abstract.column() << std::endl;
 }
 
 
 static int convertRule(AbstractSyntaxTree &ast, ConcreteRuleElement &rule) {
-  return 1;
+  auto count = rule.size();
+
+  if(3 < count && count < 9) {
+    auto ident = convertIdentifier(as<ConcreteIdentifierElement>(rule[0]));
+    std::shared_ptr<AbstractPatternList> pattern( nullptr);
+    std::shared_ptr<AbstractStorageList> storage( nullptr);
+    std::shared_ptr<AbstractCodeSnippet> validate(nullptr);
+    std::shared_ptr<AbstractCodeSnippet> encode(  nullptr);
+    std::shared_ptr<AbstractCodeSnippet> decode(  nullptr);
+
+    for(auto idx = count - 1; idx-- > 2;) {
+      auto element = rule[idx];
+      switch(element->type()) {
+        case ConcreteElementType::Decode:
+          if(decode) {
+            duplicate(as<ConcreteCompoundElement>(element), *decode, "decode:");
+            return -1;
+          }
+
+          if(!(decode = convertDecode(as<ConcreteDecodeElement>(element)))) {
+            return -1;
+          }
+        break;
+
+        case ConcreteElementType::Encode:
+          if(encode) {
+            duplicate(as<ConcreteCompoundElement>(element), *encode, "encode:");
+            return -1;
+          }
+
+          if(!(encode = convertEncode(as<ConcreteEncodeElement>(element)))) {
+            return -1;
+          }
+        break;
+
+        case ConcreteElementType::Pattern:
+          if(pattern) {
+            duplicate(as<ConcreteCompoundElement>(element), *pattern, "pattern:");
+            return -1;
+          }
+
+          if(!(pattern = convertPattern(as<ConcretePatternElement>(element)))) {
+            return -1;
+          }
+        break;
+
+        case ConcreteElementType::Storage:
+          if(storage) {
+            duplicate(as<ConcreteCompoundElement>(element), *storage, "storage:");
+            return -1;
+          }
+
+          if(!(storage = convertStorage(as<ConcreteStorageElement>(element)))) {
+            return -1;
+          }
+        break;
+
+        case ConcreteElementType::Validate:
+          if(validate) {
+            duplicate(as<ConcreteCompoundElement>(element), *validate, "validate:");
+            return -1;
+          }
+
+          if(!(validate = convertValidate(as<ConcreteValidateElement>(element)))) {
+            return -1;
+          }
+        break;
+
+        default:
+          return -1;
+        break;
+      }
+    }
+
+    ast.currentNamespace()->add(std::make_shared<AbstractRuleElement>(
+                                  ident, pattern, storage, validate, encode, decode
+                                ));
+    return 0;
+  }
+
+  return -1;
 }
 
 
@@ -1752,6 +2511,8 @@ Parser::abstractParse(ConcreteSyntaxTree &concrete) {
         std::cout << **iter << std::endl;
       break;
     }
+
+    ++iter;
   }
 
   if(errorFree) {

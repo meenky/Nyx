@@ -35,6 +35,9 @@ enum class ConcreteElementType {
 };
 
 
+const char *stringify(ConcreteElementType cet);
+
+
 class ConcreteElement {
   protected:
     ConcreteElement(ConcreteElementType);
@@ -46,6 +49,9 @@ class ConcreteElement {
       return kind;
     }
 
+    virtual int line() const = 0;
+    virtual int column() const = 0;
+    virtual const std::string &file() const = 0;
     virtual std::ostream &print(std::ostream &os) const = 0;
     virtual std::ostream &debug(std::ostream &os) const = 0;
 
@@ -75,14 +81,17 @@ class ConcreteTokenElement: public ConcreteElement {
     ConcreteTokenElement(std::shared_ptr<Token> token);
     virtual ~ConcreteTokenElement();
 
-    inline std::shared_ptr<Token> token() {
+    inline auto token() {
       return value;
     }
 
-    inline std::shared_ptr<const Token> token() const {
+    inline auto token() const {
       return value;
     }
 
+    virtual int line() const;
+    virtual int column() const;
+    virtual const std::string &file() const;
     virtual std::ostream &print(std::ostream &os) const;
     virtual std::ostream &debug(std::ostream &os) const;
 
@@ -97,9 +106,10 @@ class ConcreteCompoundElement: public ConcreteElement {
   public:
     virtual ~ConcreteCompoundElement();
 
-    typedef std::vector<std::shared_ptr<ConcreteElement>>::iterator iterator;
-    typedef std::vector<std::shared_ptr<ConcreteElement>>::const_iterator const_iterator;
-    typedef std::vector<std::shared_ptr<ConcreteElement>>::reverse_iterator reverse_iterator;
+    typedef std::vector<std::shared_ptr<ConcreteElement>>::size_type              size_type;
+    typedef std::vector<std::shared_ptr<ConcreteElement>>::iterator               iterator;
+    typedef std::vector<std::shared_ptr<ConcreteElement>>::const_iterator         const_iterator;
+    typedef std::vector<std::shared_ptr<ConcreteElement>>::reverse_iterator       reverse_iterator;
     typedef std::vector<std::shared_ptr<ConcreteElement>>::const_reverse_iterator const_reverse_iterator;
 
     inline iterator               begin()         { children.begin();   }
@@ -115,7 +125,19 @@ class ConcreteCompoundElement: public ConcreteElement {
     inline const_reverse_iterator crbegin() const { children.crbegin(); }
     inline const_reverse_iterator crend()   const { children.crend();   }
 
-    virtual std::vector<std::shared_ptr<ConcreteElement>>::size_type size() const;
+    virtual size_type size() const;
+
+    auto &operator[](size_type idx) {
+      return children[idx];
+    }
+
+    auto &operator[](size_type idx) const {
+      return children[idx];
+    }
+
+    virtual int line() const;
+    virtual int column() const;
+    virtual const std::string &file() const;
 
     virtual std::ostream &print(std::ostream &os) const;
     virtual std::ostream &debug(std::ostream &os) const;

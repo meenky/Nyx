@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <ostream>
 
 
 namespace nyx {
@@ -130,6 +131,14 @@ class Token {
       return kind == lexeme;
     }
 
+    inline bool isNumeric(bool pattern = false) {
+      return nyx::syntax::isNumeric(kind, pattern);
+    }
+
+    inline bool isOperator() {
+      return nyx::syntax::isOperator(kind);
+    }
+
     inline operator const std::string() const noexcept {
       return text();
     }
@@ -142,6 +151,11 @@ class Token {
     int                          column;
     Lexeme                       kind;
 };
+
+
+std::ostream &operator<<(std::ostream &os, const Token &ce);
+std::ostream &operator<<(std::ostream &os, const std::shared_ptr<const Token> &ce);
+
 
   }
 }

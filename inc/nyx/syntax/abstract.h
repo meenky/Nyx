@@ -19,13 +19,14 @@ enum class AbstractElementType {
   Identifier,
   Import,
   ImportList,
+  Match,
+  MatchCase,
   Module,
   Namespace,
   Pattern,
-  PatternElement,
-  PatternGroup,
+  SimplePatternElement,
+  CompoundPatternElement,
   PatternList,
-  RepeatedPattern,
   Rule,
   StorageElement,
   StorageList
@@ -34,7 +35,7 @@ enum class AbstractElementType {
 
 class AbstractElement {
   protected:
-    AbstractElement(AbstractElementType);
+    AbstractElement(AbstractElementType, int = -1, int = -1, std::shared_ptr<std::string> = nullptr);
 
   public:
     virtual ~AbstractElement();
@@ -43,6 +44,9 @@ class AbstractElement {
       return kind;
     }
 
+    int line() const;
+    int column() const;
+    const std::string &file() const;
     virtual std::ostream &print(std::ostream &os) const = 0;
     virtual std::ostream &debug(std::ostream &os) const = 0;
 
@@ -51,7 +55,10 @@ class AbstractElement {
     }
 
   private:
-    AbstractElementType kind;
+    std::shared_ptr<std::string> fileName;
+    AbstractElementType          kind;
+    int                          lineNumber;
+    int                          columnNumber;
 };
 
 
@@ -59,59 +66,10 @@ std::ostream &operator<<(std::ostream &os, const AbstractElement &ce);
 std::ostream &operator<<(std::ostream &os, const std::shared_ptr<const AbstractElement> &ce);
 
 
-class AbstractMultiTokenElement: public AbstractElement {
-  public:
-    virtual ~AbstractMultiTokenElement();
-
-    virtual std::ostream &print(std::ostream &os) const;
-    virtual std::ostream &debug(std::ostream &os) const;
-
-    typedef std::vector<std::shared_ptr<Token>>::iterator iterator;
-    typedef std::vector<std::shared_ptr<Token>>::const_iterator const_iterator;
-    typedef std::vector<std::shared_ptr<Token>>::reverse_iterator reverse_iterator;
-    typedef std::vector<std::shared_ptr<Token>>::const_reverse_iterator const_reverse_iterator;
-
-    inline iterator               begin()         { tokens.begin();   }
-    inline iterator               end()           { tokens.end();     }
-    inline const_iterator         begin()   const { tokens.begin();   }
-    inline const_iterator         end()     const { tokens.end();     }
-    inline const_iterator         cbegin()  const { tokens.cbegin();  }
-    inline const_iterator         cend()    const { tokens.cend();    }
-    inline reverse_iterator       rbegin()        { tokens.rbegin();  }
-    inline reverse_iterator       rend()          { tokens.rend();    }
-    inline const_reverse_iterator rbegin()  const { tokens.rbegin();  }
-    inline const_reverse_iterator rend()    const { tokens.rend();    }
-    inline const_reverse_iterator crbegin() const { tokens.crbegin(); }
-    inline const_reverse_iterator crend()   const { tokens.crend();   }
-
-    inline auto size() const {
-      return tokens.size();
-    }
-
-    inline bool isSimple() const {
-      return size() == 1;
-    }
-
-    inline std::shared_ptr<Token> &operator[](int idx) {
-      return tokens[idx];
-    }
-
-    void add(std::shared_ptr<Token>);
-
-  protected:
-    AbstractMultiTokenElement(AbstractElementType type, std::shared_ptr<Token> simple);
-    AbstractMultiTokenElement(AbstractElementType type,
-                              const std::vector<std::shared_ptr<Token>> &compound);
-    AbstractMultiTokenElement(AbstractElementType type, iterator first, iterator end);
-
-    std::vector<std::shared_ptr<Token>> tokens;
-};
-
-
 template<typename BASE = AbstractElement>
-class AbstractCompoundElement: public AbstractElement {
+class AbstractCompoundMixin {
   public:
-    virtual ~AbstractCompoundElement() {}
+    virtual ~AbstractCompoundMixin() {}
 
     typedef typename std::vector<std::shared_ptr<BASE>>::iterator iterator;
     typedef typename std::vector<std::shared_ptr<BASE>>::const_iterator const_iterator;
@@ -131,15 +89,15 @@ class AbstractCompoundElement: public AbstractElement {
     inline const_reverse_iterator crbegin() const { elements.crbegin(); }
     inline const_reverse_iterator crend()   const { elements.crend();   }
 
-    inline auto size() {
+    inline auto size() const {
       return elements.size();
     }
 
-    inline bool isSimple() {
+    inline bool isSimple() const {
       return size() == 1;
     }
 
-    inline bool isEmpty() {
+    inline bool isEmpty() const {
       return size() == 0;
     }
 
@@ -151,63 +109,110 @@ class AbstractCompoundElement: public AbstractElement {
       return elements[idx];
     }
 
-    virtual std::ostream &print(std::ostream &os) const {
-      auto iter = begin(), end = this->end();
-
-      while(iter != end) {
-        if(*iter) {
-          (*iter)->print(os);
-        }
-        else {
-          os << "(null)";
-        }
-
-        if(++iter != end) {
-          os << ' ';
-        }
-      }
-
-      return os;
-    }
-
-
-    virtual std::ostream &debug(std::ostream &os) const {
-      for(auto &element : elements) {
-        if(element) {
-          element->debug(os);
-        }
-        else {
-          os << "(null)";
-        }
-      }
-
-      return os;
-    }
-
   protected:
-    AbstractCompoundElement(AbstractElementType type):
-      AbstractElement(type),
+    AbstractCompoundMixin():
       elements() {
     }
 
-    AbstractCompoundElement(AbstractElementType type, std::shared_ptr<BASE> simple):
-      AbstractElement(type),
+    AbstractCompoundMixin(std::shared_ptr<BASE> simple):
       elements() {
       elements.emplace_back(simple);
     }
 
-    AbstractCompoundElement(AbstractElementType type,
-                            const std::vector<std::shared_ptr<BASE>> &compound):
-      AbstractElement(type),
+    AbstractCompoundMixin(const std::vector<std::shared_ptr<BASE>> &compound):
       elements(compound) {
     }
 
-    AbstractCompoundElement(AbstractElementType type, iterator start, iterator end):
-      AbstractElement(type),
+    AbstractCompoundMixin(iterator start, iterator end):
       elements(start, end) {
     }
 
     std::vector<std::shared_ptr<BASE>> elements;
+};
+
+
+template<typename BASE = AbstractElement>
+class AbstractLookupMixin {
+  public:
+    virtual ~AbstractLookupMixin() {}
+
+    typedef typename std::map<const std::string, std::shared_ptr<BASE>>::iterator iterator;
+    typedef typename std::map<const std::string, std::shared_ptr<BASE>>::const_iterator const_iterator;
+    typedef typename std::map<const std::string, std::shared_ptr<BASE>>::reverse_iterator reverse_iterator;
+    typedef typename std::map<const std::string, std::shared_ptr<BASE>>::const_reverse_iterator const_reverse_iterator;
+
+    inline iterator               begin()         { elements.begin();   }
+    inline iterator               end()           { elements.end();     }
+    inline const_iterator         begin()   const { elements.begin();   }
+    inline const_iterator         end()     const { elements.end();     }
+    inline const_iterator         cbegin()  const { elements.cbegin();  }
+    inline const_iterator         cend()    const { elements.cend();    }
+    inline reverse_iterator       rbegin()        { elements.rbegin();  }
+    inline reverse_iterator       rend()          { elements.rend();    }
+    inline const_reverse_iterator rbegin()  const { elements.rbegin();  }
+    inline const_reverse_iterator rend()    const { elements.rend();    }
+    inline const_reverse_iterator crbegin() const { elements.crbegin(); }
+    inline const_reverse_iterator crend()   const { elements.crend();   }
+
+    inline auto size() const {
+      return elements.size();
+    }
+
+    inline bool isEmpty() const {
+      return size() == 0;
+    }
+
+     const std::shared_ptr<BASE> operator[](const std::string key) const {
+      auto iter = elements.find(key);
+
+      if(iter != end) {
+        return iter->second;
+      }
+
+      return nullptr;
+    }
+
+    std::shared_ptr<BASE> &operator[](const std::string key) {
+      return elements[key];
+    }
+
+  protected:
+    AbstractLookupMixin():
+      elements() {
+    }
+
+    AbstractLookupMixin(const std::string &key, std::shared_ptr<BASE> simple):
+      elements() {
+      elements.emplace(key, simple);
+    }
+
+    AbstractLookupMixin(const std::map<const std::string, std::shared_ptr<BASE>> &compound):
+      elements(compound) {
+    }
+
+    AbstractLookupMixin(iterator start, iterator end):
+      elements(start, end) {
+    }
+
+    std::map<const std::string, std::shared_ptr<BASE>> elements;
+};
+
+
+class AbstractMultiTokenElement: public AbstractElement, public AbstractCompoundMixin<Token> {
+  public:
+    virtual ~AbstractMultiTokenElement();
+
+    virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
+
+    void add(std::shared_ptr<Token>);
+
+  protected:
+    AbstractMultiTokenElement(AbstractElementType type);
+    AbstractMultiTokenElement(AbstractElementType type, std::shared_ptr<Token> simple);
+    AbstractMultiTokenElement(AbstractElementType type,
+                              const std::vector<std::shared_ptr<Token>> &compound);
+    AbstractMultiTokenElement(AbstractElementType type, iterator first, iterator end);
 };
 
 
@@ -216,6 +221,8 @@ class AbstractIdentifierElement: public AbstractMultiTokenElement {
     AbstractIdentifierElement(std::shared_ptr<Token> simple);
     AbstractIdentifierElement(const std::vector<std::shared_ptr<Token>> &compound);
     AbstractIdentifierElement(iterator first, iterator end);
+    AbstractIdentifierElement(const AbstractIdentifierElement &first,
+                              const AbstractIdentifierElement &second);
 
     virtual ~AbstractIdentifierElement();
 
@@ -256,7 +263,15 @@ class AbstractImportElement: public AbstractElement {
       return module_ptr;
     }
 
+    inline auto module() const {
+      return module_ptr;
+    }
+
     inline auto alias() {
+      return alias_ptr;
+    }
+
+    inline auto alias() const {
       return alias_ptr;
     }
 
@@ -264,14 +279,18 @@ class AbstractImportElement: public AbstractElement {
       return element_ptr;
     }
 
+    inline auto element() const {
+      return element_ptr;
+    }
 
-    inline bool hasAlias() {
+    inline bool hasAlias() const {
       return static_cast<bool>(alias_ptr);
     }
 
-    inline bool hasElement() {
+    inline bool hasElement() const {
       return static_cast<bool>(element_ptr);
     }
+
 
   protected:
     std::shared_ptr<AbstractIdentifierElement> module_ptr;
@@ -284,7 +303,7 @@ class AbstractImportElement: public AbstractElement {
 };
 
 
-class AbstractImportList: public AbstractCompoundElement<AbstractImportElement> {
+class AbstractImportList: public AbstractElement, public AbstractCompoundMixin<AbstractImportElement> {
   public:
     AbstractImportList();
     AbstractImportList(std::shared_ptr<AbstractImportElement> simple);
@@ -294,6 +313,7 @@ class AbstractImportList: public AbstractCompoundElement<AbstractImportElement> 
     virtual ~AbstractImportList();
 
     virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
 
     void add(std::shared_ptr<AbstractImportElement>);
 };
@@ -323,31 +343,72 @@ class AbstractAliasElement: public AbstractElement {
 };
 
 
-class AbstractAliasList: public AbstractCompoundElement<AbstractAliasElement> {
+class AbstractAliasList: public AbstractElement, public AbstractLookupMixin<AbstractAliasElement> {
   public:
     AbstractAliasList();
-    AbstractAliasList(std::shared_ptr<AbstractAliasElement> simple);
-    AbstractAliasList(const std::vector<std::shared_ptr<AbstractAliasElement>> &multi);
+    AbstractAliasList(const std::string &key, std::shared_ptr<AbstractAliasElement> simple);
+    AbstractAliasList(const std::map<const std::string, std::shared_ptr<AbstractAliasElement>> &multi);
     AbstractAliasList(iterator first, iterator end);
     virtual ~AbstractAliasList();
 
     virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
 
     void add(std::shared_ptr<AbstractAliasElement>);
 };
 
 
-class AbstractPatternElement: public AbstractElement {
+class AbstractMatchCaseElement: public AbstractElement {
   public:
-    AbstractPatternElement(std::shared_ptr<Token> token,
-                           std::shared_ptr<Token> lower = nullptr,
-                           std::shared_ptr<Token> upper = nullptr,
-                           std::shared_ptr<Token> bind  = nullptr);
-    virtual ~AbstractPatternElement();
+    AbstractMatchCaseElement(std::shared_ptr<Token>                     key,
+                             std::shared_ptr<AbstractIdentifierElement> value);
+
+    virtual ~AbstractMatchCaseElement();
 
     virtual std::ostream &print(std::ostream &os) const;
     virtual std::ostream &debug(std::ostream &os) const;
 
+    auto key() {
+      return key_ptr;
+    }
+
+    auto key() const {
+      return key_ptr;
+    }
+
+    auto value() {
+      return value_ptr;
+    }
+
+    auto value() const {
+      return value_ptr;
+    }
+
+  protected:
+    std::shared_ptr<Token>                     key_ptr;
+    std::shared_ptr<AbstractIdentifierElement> value_ptr;
+};
+
+
+class AbstractPatternElement: public AbstractElement {
+  public:
+    virtual ~AbstractPatternElement();
+
+    virtual std::ostream &print(std::ostream &os) const = 0;
+    virtual std::ostream &debug(std::ostream &os) const = 0;
+
+    inline bool isSimple() const {
+      return simple;
+    }
+
+    inline bool isCompound() const {
+      return !isSimple();
+    }
+
+    inline bool isMatch() const {
+      return type() == AbstractElementType::Match;
+    }
+
     inline bool hasMinimum() const {
       return static_cast<bool>(min);
     }
@@ -357,11 +418,7 @@ class AbstractPatternElement: public AbstractElement {
     }
 
     inline bool hasBinding() const {
-      return static_cast<bool>(ident);
-    }
-
-    auto pattern() {
-      return elem;
+      return static_cast<bool>(bind);
     }
 
     auto minimum() {
@@ -373,79 +430,152 @@ class AbstractPatternElement: public AbstractElement {
     }
 
     auto binding() {
+      return bind;
+    }
+
+  protected:
+    AbstractPatternElement(AbstractElementType    type,
+                           bool                   simple,
+                           std::shared_ptr<Token> lower,
+                           std::shared_ptr<Token> upper,
+                           std::shared_ptr<Token> bind);
+
+    std::shared_ptr<Token>                     min;
+    std::shared_ptr<Token>                     max;
+    std::shared_ptr<Token>                     bind;
+    bool simple;
+};
+
+
+class AbstractSimplePatternElement: public AbstractPatternElement {
+  public:
+    AbstractSimplePatternElement(std::shared_ptr<AbstractIdentifierElement> member,
+                                 std::shared_ptr<Token> lower = nullptr,
+                                 std::shared_ptr<Token> upper = nullptr,
+                                 std::shared_ptr<Token> bind = nullptr);
+    AbstractSimplePatternElement(std::shared_ptr<Token> member,
+                                 std::shared_ptr<Token> lower = nullptr,
+                                 std::shared_ptr<Token> upper = nullptr,
+                                 std::shared_ptr<Token> bind = nullptr);
+    virtual ~AbstractSimplePatternElement();
+
+    virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
+
+    inline bool isToken() const {
+      return static_cast<bool>(min);
+    }
+
+    inline bool isIdentifier() const {
+      return static_cast<bool>(max);
+    }
+
+    auto token() {
+      return tok;
+    }
+
+    auto token() const {
+      return tok;
+    }
+
+    auto identifier() {
+      return ident;
+    }
+
+    auto identifier() const {
       return ident;
     }
 
   protected:
-    std::shared_ptr<Token> elem;
-    std::shared_ptr<Token> min;
-    std::shared_ptr<Token> max;
-    std::shared_ptr<Token> ident;
+    std::shared_ptr<Token>                     tok;
+    std::shared_ptr<AbstractIdentifierElement> ident;
 };
 
 
-class AbstractPatternGroup: public AbstractCompoundElement<AbstractPatternElement> {
+class AbstractMatchElement: public AbstractPatternElement,
+                            public AbstractCompoundMixin<AbstractMatchCaseElement> {
   public:
-    AbstractPatternGroup(std::shared_ptr<AbstractPatternElement> simple,
-                         std::shared_ptr<Token>                  lower = nullptr,
-                         std::shared_ptr<Token>                  upper = nullptr,
-                         std::shared_ptr<Token>                  bind  = nullptr);
-    virtual ~AbstractPatternGroup();
+    AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                         std::shared_ptr<Token> lower = nullptr,
+                         std::shared_ptr<Token> upper = nullptr,
+                         std::shared_ptr<Token> bind  = nullptr);
+    AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                         std::shared_ptr<AbstractMatchCaseElement> simple,
+                         std::shared_ptr<Token> lower = nullptr,
+                         std::shared_ptr<Token> upper = nullptr,
+                         std::shared_ptr<Token> bind  = nullptr);
+    AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                         const std::vector<std::shared_ptr<AbstractMatchCaseElement>> &multi,
+                         std::shared_ptr<Token> lower = nullptr,
+                         std::shared_ptr<Token> upper = nullptr,
+                         std::shared_ptr<Token> bind  = nullptr);
+    AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                         iterator first, iterator end,
+                         std::shared_ptr<Token> lower = nullptr,
+                         std::shared_ptr<Token> upper = nullptr,
+                         std::shared_ptr<Token> bind  = nullptr);
+
+    virtual ~AbstractMatchElement();
 
     virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
+
+    void add(std::shared_ptr<AbstractMatchCaseElement>);
+
+    auto discriminant() {
+      return key;
+    }
+
+    auto discriminant() const {
+      return key;
+    }
+
+  protected:
+    std::shared_ptr<AbstractIdentifierElement> key;
+};
+
+
+class AbstractCompoundPatternElement: public AbstractPatternElement,
+                                      public AbstractCompoundMixin<AbstractPatternElement> {
+  public:
+    AbstractCompoundPatternElement(std::shared_ptr<Token> lower = nullptr,
+                                   std::shared_ptr<Token> upper = nullptr,
+                                   std::shared_ptr<Token> bind  = nullptr);
+    AbstractCompoundPatternElement(std::shared_ptr<AbstractPatternElement> member,
+                                   std::shared_ptr<Token> lower = nullptr,
+                                   std::shared_ptr<Token> upper = nullptr,
+                                   std::shared_ptr<Token> bind  = nullptr);
+    AbstractCompoundPatternElement(const std::vector<std::shared_ptr<AbstractPatternElement>> &compound,
+                                   std::shared_ptr<Token> lower = nullptr,
+                                   std::shared_ptr<Token> upper = nullptr,
+                                   std::shared_ptr<Token> bind  = nullptr);
+    AbstractCompoundPatternElement(iterator start,
+                                   iterator end,
+                                   std::shared_ptr<Token> lower = nullptr,
+                                   std::shared_ptr<Token> upper = nullptr,
+                                   std::shared_ptr<Token> bind  = nullptr);
+    virtual ~AbstractCompoundPatternElement();
+
+    virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
 
     void add(std::shared_ptr<AbstractPatternElement>);
-
-    inline bool hasMinimum() const {
-      return static_cast<bool>(min);
-    }
-
-    inline bool hasMaximum() const {
-      return static_cast<bool>(max);
-    }
-
-    inline bool hasBinding() const {
-      return static_cast<bool>(ident);
-    }
-
-    auto minimum() {
-      return min;
-    }
-
-    auto maximum() {
-      return max;
-    }
-
-    auto binding() {
-      return ident;
-    }
-
-  protected:
-    std::shared_ptr<Token>                  min;
-    std::shared_ptr<Token>                  max;
-    std::shared_ptr<Token>                  ident;
 };
 
 
-class AbstractPatternAlternates: public AbstractCompoundElement<AbstractPatternGroup> {
+class AbstractPatternList: public AbstractElement,
+                           public AbstractCompoundMixin<AbstractPatternElement> {
   public:
-    AbstractPatternAlternates(std::shared_ptr<AbstractPatternGroup> simple);
-    virtual ~AbstractPatternAlternates();
-
-    virtual std::ostream &print(std::ostream &os) const;
-
-    void add(std::shared_ptr<AbstractPatternGroup>);
-};
-
-
-class AbstractPatternList: public AbstractCompoundElement<AbstractPatternAlternates> {
-  public:
-    AbstractPatternList(std::shared_ptr<AbstractPatternAlternates> simple);
+    AbstractPatternList();
+    AbstractPatternList(std::shared_ptr<AbstractPatternElement> simple);
+    AbstractPatternList(const std::vector<std::shared_ptr<AbstractPatternElement>> &compound);
+    AbstractPatternList(iterator start, iterator end);
     virtual ~AbstractPatternList();
 
     virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
 
-    void add(std::shared_ptr<AbstractPatternAlternates>);
+    void add(std::shared_ptr<AbstractPatternElement>);
 };
 
 
@@ -477,27 +607,33 @@ class AbstractStorageElement: public AbstractElement {
 };
 
 
-class AbstractStorageList: public AbstractCompoundElement<AbstractStorageElement> {
+class AbstractStorageList: public AbstractElement,
+                           public AbstractCompoundMixin<AbstractStorageElement> {
   public:
+    AbstractStorageList();
     AbstractStorageList(std::shared_ptr<AbstractStorageElement> simple);
+    AbstractStorageList(const std::vector<std::shared_ptr<AbstractStorageElement>> &compound);
+    AbstractStorageList(iterator start, iterator end);
     virtual ~AbstractStorageList();
 
     virtual std::ostream &print(std::ostream &os) const;
+    virtual std::ostream &debug(std::ostream &os) const;
 
     void add(std::shared_ptr<AbstractStorageElement>);
 };
 
 
-class AbstractSExpr {
+class AbstractSexpr {
   public:
-    AbstractSExpr();
-    AbstractSExpr(std::shared_ptr<Token>);
-    AbstractSExpr(std::shared_ptr<AbstractSExpr>);
+    AbstractSexpr();
+    AbstractSexpr(std::shared_ptr<Token>);
+    AbstractSexpr(std::shared_ptr<AbstractSexpr>);
+    AbstractSexpr(std::shared_ptr<AbstractIdentifierElement>);
 
     std::ostream &print(std::ostream &os) const;
     std::ostream &debug(std::ostream &os) const;
 
-    void setNext(std::shared_ptr<AbstractSExpr> next) {
+    void setNext(std::shared_ptr<AbstractSexpr> next) {
       sexpr_next = next;
     }
 
@@ -517,6 +653,14 @@ class AbstractSExpr {
       return tok_val;
     }
 
+    auto identifier() {
+      return ident_val;
+    }
+
+    auto identifier() const {
+      return ident_val;
+    }
+
     auto sexpr() {
       return sexpr_val;
     }
@@ -529,24 +673,29 @@ class AbstractSExpr {
       static_cast<bool>(tok_val);
     }
 
+    bool isIdentifier() const {
+      static_cast<bool>(ident_val);
+    }
+
     bool isSexpr() const {
       static_cast<bool>(sexpr_val);
     }
 
     bool isEmpty() const {
-      return !isToken() && !isSexpr();
+      return !isToken() && !isSexpr() && !isIdentifier();
     }
 
   protected:
-    std::shared_ptr<Token> tok_val;
-    std::shared_ptr<AbstractSExpr> sexpr_val;
-    std::shared_ptr<AbstractSExpr> sexpr_next;
+    std::shared_ptr<Token>                     tok_val;
+    std::shared_ptr<AbstractSexpr>             sexpr_val;
+    std::shared_ptr<AbstractSexpr>             sexpr_next;
+    std::shared_ptr<AbstractIdentifierElement> ident_val;
 };
 
 
 class AbstractCodeSnippet: public AbstractElement {
   public:
-    AbstractCodeSnippet(std::shared_ptr<AbstractSExpr>);
+    AbstractCodeSnippet(std::shared_ptr<AbstractSexpr>);
     virtual ~AbstractCodeSnippet();
 
     virtual std::ostream &print(std::ostream &os) const;
@@ -557,7 +706,7 @@ class AbstractCodeSnippet: public AbstractElement {
     }
 
   protected:
-    std::shared_ptr<AbstractSExpr> expr;
+    std::shared_ptr<AbstractSexpr> expr;
 };
 
 
@@ -600,7 +749,6 @@ class AbstractRuleElement: public AbstractElement {
       return dec;
     }
 
-
     inline bool hasStorage() {
       return static_cast<bool>(store);
     }
@@ -627,87 +775,71 @@ class AbstractRuleElement: public AbstractElement {
 };
 
 
-class AbstractNamespaceElement: public AbstractElement {
+class AbstractNamespaceElement: public AbstractElement,
+                                public AbstractLookupMixin<AbstractRuleElement> {
   public:
+    AbstractNamespaceElement();
     AbstractNamespaceElement(std::shared_ptr<AbstractIdentifierElement>, bool module = false);
     virtual ~AbstractNamespaceElement();
 
     virtual std::ostream &print(std::ostream &os) const;
     virtual std::ostream &debug(std::ostream &os) const;
 
-    typedef std::map<const std::string, std::shared_ptr<AbstractRuleElement>>::iterator iterator;
-    typedef std::map<const std::string, std::shared_ptr<AbstractRuleElement>>::const_iterator const_iterator;
-    typedef std::map<const std::string, std::shared_ptr<AbstractRuleElement>>::reverse_iterator reverse_iterator;
-    typedef std::map<const std::string, std::shared_ptr<AbstractRuleElement>>::const_reverse_iterator const_reverse_iterator;
+    void add(std::shared_ptr<AbstractRuleElement>);
+    void add(std::shared_ptr<AbstractAliasElement>);
+    void add(std::shared_ptr<AbstractImportElement>);
 
-    inline iterator               begin()         { elements.begin();   }
-    inline iterator               end()           { elements.end();     }
-    inline const_iterator         begin()   const { elements.begin();   }
-    inline const_iterator         end()     const { elements.end();     }
-    inline const_iterator         cbegin()  const { elements.cbegin();  }
-    inline const_iterator         cend()    const { elements.cend();    }
-    inline reverse_iterator       rbegin()        { elements.rbegin();  }
-    inline reverse_iterator       rend()          { elements.rend();    }
-    inline const_reverse_iterator rbegin()  const { elements.rbegin();  }
-    inline const_reverse_iterator rend()    const { elements.rend();    }
-    inline const_reverse_iterator crbegin() const { elements.crbegin(); }
-    inline const_reverse_iterator crend()   const { elements.crend();   }
-
-    inline auto identifier() {
+    auto identifier() {
       return ident;
     }
 
-    inline auto size() {
-      return elements.size();
+    auto identifier() const {
+      return ident;
     }
 
-    inline bool isEmpty() {
-      return size() == 0;
+    auto aliasList() {
+      return aliases;
     }
 
-    inline std::shared_ptr<AbstractRuleElement> &operator[](const std::string &key) {
-      return elements[key];
+    auto aliasList() const {
+      return aliases;
     }
 
-    void add(std::shared_ptr<AbstractRuleElement>);
+    auto importList() {
+      return imports;
+    }
+
+    auto importList() const {
+      return imports;
+    }
 
   protected:
     std::shared_ptr<AbstractIdentifierElement> ident;
-    std::map<const std::string, std::shared_ptr<AbstractRuleElement>> elements;
+    std::shared_ptr<AbstractAliasList>         aliases;
+    std::shared_ptr<AbstractImportList>        imports;
 };
 
 
-class AbstractSyntaxTree {
+class AbstractSyntaxTree: public AbstractLookupMixin<AbstractNamespaceElement> {
   public:
     AbstractSyntaxTree();
 
     std::ostream &print(std::ostream &os) const;
     std::ostream &debug(std::ostream &os) const;
 
-    typedef std::vector<std::shared_ptr<AbstractNamespaceElement>>::iterator iterator;
-    typedef std::vector<std::shared_ptr<AbstractNamespaceElement>>::const_iterator const_iterator;
-    typedef std::vector<std::shared_ptr<AbstractNamespaceElement>>::reverse_iterator reverse_iterator;
-    typedef std::vector<std::shared_ptr<AbstractNamespaceElement>>::const_reverse_iterator const_reverse_iterator;
-
-    inline iterator               begin()         { spaces.begin();   }
-    inline iterator               end()           { spaces.end();     }
-    inline const_iterator         begin()   const { spaces.begin();   }
-    inline const_iterator         end()     const { spaces.end();     }
-    inline const_iterator         cbegin()  const { spaces.cbegin();  }
-    inline const_iterator         cend()    const { spaces.cend();    }
-    inline reverse_iterator       rbegin()        { spaces.rbegin();  }
-    inline reverse_iterator       rend()          { spaces.rend();    }
-    inline const_reverse_iterator rbegin()  const { spaces.rbegin();  }
-    inline const_reverse_iterator rend()    const { spaces.rend();    }
-    inline const_reverse_iterator crbegin() const { spaces.crbegin(); }
-    inline const_reverse_iterator crend()   const { spaces.crend();   }
-
     std::shared_ptr<AbstractNamespaceElement> currentNamespace();
     std::shared_ptr<AbstractNamespaceElement>
     addNamespace(std::shared_ptr<AbstractIdentifierElement>, bool emit);
 
+    std::shared_ptr<AbstractAliasList> currentAliasList();
+    void addAlias(std::shared_ptr<AbstractAliasElement>);
+
+    std::shared_ptr<AbstractImportList> currentImportList();
+    void addImport(std::shared_ptr<AbstractImportElement>);
+
+
   protected:
-    std::vector<std::shared_ptr<AbstractNamespaceElement>> spaces;
+    std::shared_ptr<AbstractNamespaceElement> current;
 };
 
 

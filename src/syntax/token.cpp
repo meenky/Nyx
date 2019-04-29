@@ -102,3 +102,28 @@ bool nyx::syntax::isOperator(Lexeme lexeme) {
   }
 }
 
+
+namespace nyx {
+  namespace syntax {
+
+std::ostream &operator<<(std::ostream &os, const Token &tok) {
+  os << tok.text();
+
+  return os;
+}
+
+
+std::ostream &operator<<(std::ostream &os, const std::shared_ptr<const Token> &tok) {
+  if(tok) {
+    os << *tok;
+  }
+  else {
+    os << "(null)";
+  }
+
+  return os;
+}
+
+
+  }
+}

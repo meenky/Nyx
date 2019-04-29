@@ -24,6 +24,38 @@ std::vector<std::shared_ptr<ConcreteElement>>::size_type ConcreteElement::size()
 namespace nyx {
   namespace syntax {
 
+#define _STRINGIFY(x) #x
+#define STRINGIFY(x) _STRINGIFY(x)
+#define PRINT_ENUM(e) case ConcreteElementType::e: return STRINGIFY(e); break
+
+const char *stringify(ConcreteElementType cet) {
+  switch(cet) {
+    PRINT_ENUM(Alias);
+    PRINT_ENUM(Bound);
+    PRINT_ENUM(Comment);
+    PRINT_ENUM(Decode);
+    PRINT_ENUM(Documentation);
+    PRINT_ENUM(Encode);
+    PRINT_ENUM(Identifier);
+    PRINT_ENUM(Import);
+    PRINT_ENUM(List);
+    PRINT_ENUM(Match);
+    PRINT_ENUM(Module);
+    PRINT_ENUM(Namespace);
+    PRINT_ENUM(Pattern);
+    PRINT_ENUM(Repetition);
+    PRINT_ENUM(Root);
+    PRINT_ENUM(Rule);
+    PRINT_ENUM(SExpr);
+    PRINT_ENUM(Storage);
+    PRINT_ENUM(Token);
+    PRINT_ENUM(Validate);
+  }
+
+  return "INVALID";
+}
+
+
 std::ostream &operator<<(std::ostream &os, const ConcreteElement &ce) {
   ce.print(os);
   return os;
@@ -40,6 +72,7 @@ std::ostream &operator<<(std::ostream &os, const std::shared_ptr<ConcreteElement
 
   return os;
 }
+
 
   }
 }
@@ -85,6 +118,39 @@ std::ostream &ConcreteTokenElement::debug(std::ostream &os) const {
   }
 
   return os;
+}
+
+
+static const std::string INVALID("<INVALID>");
+
+
+int ConcreteTokenElement::line() const {
+  if(value) {
+    return value->lineNumber();
+  }
+  else {
+    return -1;
+  }
+}
+
+
+int ConcreteTokenElement::column() const {
+  if(value) {
+    return value->columnNumber();
+  }
+  else {
+    return -1;
+  }
+}
+
+
+const std::string &ConcreteTokenElement::file() const {
+  if(value) {
+    return value->fileName();
+  }
+  else {
+    return INVALID;
+  }
 }
 
 
@@ -143,6 +209,36 @@ ConcreteCompoundElement::getPeerChildren(ConcreteCompoundElement *peer) {
 const std::vector<std::shared_ptr<ConcreteElement>> &
 ConcreteCompoundElement::getPeerChildren(const ConcreteCompoundElement *peer) {
   return peer->children;
+}
+
+
+int ConcreteCompoundElement::line() const {
+  if(children.size() && children[0]) {
+    return children[0]->line();
+  }
+  else {
+    return -1;
+  }
+}
+
+
+int ConcreteCompoundElement::column() const {
+  if(children.size() && children[0]) {
+    return children[0]->column();
+  }
+  else {
+    return -1;
+  }
+}
+
+
+const std::string &ConcreteCompoundElement::file() const {
+  if(children.size() && children[0]) {
+    return children[0]->file();
+  }
+  else {
+    return INVALID;
+  }
 }
 
 

@@ -4,13 +4,42 @@
 using namespace nyx::syntax;
 
 
-AbstractElement::AbstractElement(AbstractElementType type):
-  kind(type) {
+AbstractElement::AbstractElement(AbstractElementType          type,
+                                 int                          line,
+                                 int                          column,
+                                 std::shared_ptr<std::string> ptr):
+  fileName(ptr),
+  kind(type),
+  lineNumber(line),
+  columnNumber(column) {
 }
 
 
 AbstractElement::~AbstractElement() {
   // nothing to do here
+}
+
+
+static const std::string INVALID("<INVALID>");
+
+
+int AbstractElement::line() const {
+  return lineNumber;
+}
+
+
+int AbstractElement::column() const {
+  return columnNumber;
+}
+
+
+const std::string &AbstractElement::file() const {
+  if(fileName) {
+    return *fileName;
+  }
+  else {
+    return INVALID;
+  }
 }
 
 
@@ -36,12 +65,17 @@ std::ostream &operator<<(std::ostream &os, const std::shared_ptr<const AbstractE
 }
 
 
+AbstractMultiTokenElement::AbstractMultiTokenElement(AbstractElementType type):
+  AbstractElement(type),
+  AbstractCompoundMixin<Token>() {
+}
+
+
 AbstractMultiTokenElement::AbstractMultiTokenElement(
     AbstractElementType type,
     std::shared_ptr<Token> simple):
   AbstractElement(type),
-  tokens() {
-  tokens.emplace_back(simple);
+  AbstractCompoundMixin<Token>(simple) {
 }
 
 
@@ -49,7 +83,7 @@ AbstractMultiTokenElement::AbstractMultiTokenElement(
     AbstractElementType type,
     const std::vector<std::shared_ptr<Token>> &compound):
   AbstractElement(type),
-  tokens(compound) {
+  AbstractCompoundMixin<Token>(compound) {
 }
 
 
@@ -58,7 +92,7 @@ AbstractMultiTokenElement::AbstractMultiTokenElement(
     iterator first,
     iterator end):
   AbstractElement(type),
-  tokens(first, end) {
+  AbstractCompoundMixin<Token>(first, end) {
 }
 
 
@@ -88,7 +122,7 @@ std::ostream &AbstractMultiTokenElement::print(std::ostream &os) const {
 
 
 std::ostream &AbstractMultiTokenElement::debug(std::ostream &os) const {
-  for(auto &token : tokens) {
+  for(auto &token : elements) {
     if(token) {
       os << token->fileName()     << ":"
          << token->lineNumber()   << "."
@@ -105,7 +139,7 @@ std::ostream &AbstractMultiTokenElement::debug(std::ostream &os) const {
 
 
 void AbstractMultiTokenElement::add(std::shared_ptr<Token> token) {
-  tokens.emplace_back(token);
+  elements.emplace_back(token);
 }
 
 
@@ -122,6 +156,15 @@ AbstractIdentifierElement::AbstractIdentifierElement(
 
 AbstractIdentifierElement::AbstractIdentifierElement(iterator first, iterator end):
   AbstractMultiTokenElement(AbstractElementType::Identifier, first, end) {
+}
+
+
+AbstractIdentifierElement::AbstractIdentifierElement(const AbstractIdentifierElement &first,
+                                                     const AbstractIdentifierElement &second):
+  AbstractMultiTokenElement(AbstractElementType::Identifier) {
+  elements.reserve(first.size() + second.size());
+  elements.insert(elements.end(), first.begin(), first.end());
+  elements.insert(elements.end(), second.begin(), second.end());
 }
 
 
@@ -151,14 +194,14 @@ std::ostream &AbstractIdentifierElement::print(std::ostream &os) const {
 std::string AbstractIdentifierElement::toString() const {
   std::string retVal;
   auto count = size();
-  for(auto &token : tokens) {
+  for(auto &token : elements) {
     if(token) {
       count += token->text().size();
     }
   }
 
   retVal.reserve(count);
-  for(auto &token : tokens) {
+  for(auto &token : elements) {
     retVal.append(token->text()).append(1, '.');
   }
 
@@ -204,18 +247,18 @@ std::ostream &AbstractImportElement::print(std::ostream &os) const {
   os << "Import: ";
 
   if(element_ptr) {
-    os << *element_ptr << " from ";
+    element_ptr->print(os) << " from ";
   }
 
   if(module_ptr) {
-    os << *module_ptr;
+    module_ptr->print(os);
   }
   else {
     os << "(null)";
   }
 
   if(alias_ptr) {
-    os << " as " << *alias_ptr;
+    alias_ptr->print(os << " as ");
   }
 
   os << std::endl;
@@ -267,23 +310,27 @@ AbstractImportElement::AbstractImportElement(std::shared_ptr<AbstractIdentifierE
 
 
 AbstractImportList::AbstractImportList():
-  AbstractCompoundElement<AbstractImportElement>(AbstractElementType::ImportList) {
+  AbstractElement(AbstractElementType::ImportList),
+  AbstractCompoundMixin<AbstractImportElement>() {
 }
 
 
 AbstractImportList::AbstractImportList(std::shared_ptr<AbstractImportElement> simple):
-  AbstractCompoundElement<AbstractImportElement>(AbstractElementType::ImportList, simple) {
+  AbstractElement(AbstractElementType::ImportList),
+  AbstractCompoundMixin<AbstractImportElement>(simple) {
 }
 
 
 AbstractImportList::AbstractImportList(
     const std::vector<std::shared_ptr<AbstractImportElement>> &multi):
-  AbstractCompoundElement<AbstractImportElement>(AbstractElementType::ImportList, multi) {
+  AbstractElement(AbstractElementType::ImportList),
+  AbstractCompoundMixin<AbstractImportElement>(multi) {
 }
 
 
 AbstractImportList::AbstractImportList(iterator first, iterator end):
-  AbstractCompoundElement<AbstractImportElement>(AbstractElementType::ImportList, first, end) {
+  AbstractElement(AbstractElementType::ImportList),
+  AbstractCompoundMixin<AbstractImportElement>(first, end) {
 }
 
 
@@ -293,14 +340,17 @@ AbstractImportList::~AbstractImportList() {
 
 
 std::ostream &AbstractImportList::print(std::ostream &os) const {
-  auto iter = begin(), end = this->end();
+  for(auto &import : *this) {
+    import->print(os) << std::endl;
+  }
 
-  while(iter != end) {
-    os << *iter;
+  return os;
+}
 
-    if(++iter != end) {
-      os << std::endl;
-    }
+
+std::ostream &AbstractImportList::debug(std::ostream &os) const {
+  for(auto &import : *this) {
+    import->debug(os) << std::endl;
   }
 
   return os;
@@ -327,7 +377,7 @@ AbstractAliasElement::~AbstractAliasElement() {
 
 
 std::ostream &AbstractAliasElement::print(std::ostream &os) const {
-  os << "Alias: " << original_ptr << " as " << alias_ptr;
+  alias_ptr->print(original_ptr->print(os << "Alias: ") << " as ");
   return os;
 }
 
@@ -354,22 +404,28 @@ std::ostream &AbstractAliasElement::debug(std::ostream &os) const {
 
 
 AbstractAliasList::AbstractAliasList():
-  AbstractCompoundElement<AbstractAliasElement>(AbstractElementType::AliasList) {
+  AbstractElement(AbstractElementType::AliasList),
+  AbstractLookupMixin<AbstractAliasElement>() {
 }
 
 
-AbstractAliasList::AbstractAliasList(std::shared_ptr<AbstractAliasElement> simple):
-  AbstractCompoundElement<AbstractAliasElement>(AbstractElementType::AliasList, simple) {
+AbstractAliasList::AbstractAliasList(const std::string &key,
+                                     std::shared_ptr<AbstractAliasElement> simple):
+  AbstractElement(AbstractElementType::AliasList),
+  AbstractLookupMixin<AbstractAliasElement>(key, simple) {
 }
 
 
-AbstractAliasList::AbstractAliasList(const std::vector<std::shared_ptr<AbstractAliasElement>> &multi):
-  AbstractCompoundElement<AbstractAliasElement>(AbstractElementType::AliasList, multi) {
+AbstractAliasList::AbstractAliasList(
+    const std::map<const std::string, std::shared_ptr<AbstractAliasElement>> &multi):
+  AbstractElement(AbstractElementType::AliasList),
+  AbstractLookupMixin<AbstractAliasElement>(multi) {
 }
 
 
 AbstractAliasList::AbstractAliasList(iterator first, iterator end):
-  AbstractCompoundElement<AbstractAliasElement>(AbstractElementType::AliasList, first, end) {
+  AbstractElement(AbstractElementType::AliasList),
+  AbstractLookupMixin<AbstractAliasElement>(first, end) {
 }
 
 
@@ -379,14 +435,17 @@ AbstractAliasList::~AbstractAliasList() {
 
 
 std::ostream &AbstractAliasList::print(std::ostream &os) const {
-  auto iter = begin(), end = this->end();
+  for(auto &alias : *this) {
+    alias.second->print(os) << std::endl;
+  }
 
-  while(iter != end) {
-    os << *iter;
+  return os;
+}
 
-    if(++iter != end) {
-      os << std::endl;
-    }
+
+std::ostream &AbstractAliasList::debug(std::ostream &os) const {
+  for(auto &alias : *this) {
+    alias.second->debug(os) << std::endl;
   }
 
   return os;
@@ -394,31 +453,169 @@ std::ostream &AbstractAliasList::print(std::ostream &os) const {
 
 
 void AbstractAliasList::add(std::shared_ptr<AbstractAliasElement> alias) {
-  elements.emplace_back(alias);
+  if(alias) {
+    if(auto rename = alias->alias()) {
+      elements.emplace(rename->toString(), alias);
+    }
+  }
 }
 
 
-AbstractPatternElement::AbstractPatternElement(std::shared_ptr<Token> token,
+AbstractMatchCaseElement::AbstractMatchCaseElement(std::shared_ptr<Token>                     key,
+                                                   std::shared_ptr<AbstractIdentifierElement> value):
+  AbstractElement(AbstractElementType::MatchCase),
+  key_ptr(key),
+  value_ptr(value) {
+}
+
+
+AbstractMatchCaseElement::~AbstractMatchCaseElement() {
+  // nothing to do here
+}
+
+
+std::ostream &AbstractMatchCaseElement::print(std::ostream &os) const {
+  os << "Case: ";
+  nyx::syntax::operator<<(os, key_ptr)   << " => ";
+  nyx::syntax::operator<<(os, value_ptr);
+
+  return os;
+}
+
+
+std::ostream &AbstractMatchCaseElement::debug(std::ostream &os) const {
+  return print(os);
+}
+
+
+AbstractMatchElement::AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                                           std::shared_ptr<Token>                     lower,
+                                           std::shared_ptr<Token>                     upper,
+                                           std::shared_ptr<Token>                     bind):
+  AbstractPatternElement(AbstractElementType::Match, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractMatchCaseElement>() {
+
+}
+
+
+AbstractMatchElement::AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                                           std::shared_ptr<AbstractMatchCaseElement>  simple,
+                                           std::shared_ptr<Token>                     lower,
+                                           std::shared_ptr<Token>                     upper,
+                                           std::shared_ptr<Token>                     bind):
+  AbstractPatternElement(AbstractElementType::Match, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractMatchCaseElement>(simple),
+  key(discriminant) {
+}
+
+
+AbstractMatchElement::AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                         const std::vector<std::shared_ptr<AbstractMatchCaseElement>> &multi,
+                                           std::shared_ptr<Token>                     lower,
+                                           std::shared_ptr<Token>                     upper,
+                                           std::shared_ptr<Token>                     bind):
+  AbstractPatternElement(AbstractElementType::Match, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractMatchCaseElement>(multi),
+  key(discriminant) {
+}
+
+
+AbstractMatchElement::AbstractMatchElement(std::shared_ptr<AbstractIdentifierElement> discriminant,
+                                           iterator                                   first,
+                                           iterator                                    end,
+                                           std::shared_ptr<Token>                     lower,
+                                           std::shared_ptr<Token>                     upper,
+                                           std::shared_ptr<Token>                     bind):
+  AbstractPatternElement(AbstractElementType::Match, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractMatchCaseElement>(first, end),
+  key(discriminant) {
+}
+
+
+AbstractMatchElement::~AbstractMatchElement() {
+  // nothing to do here
+}
+
+
+std::ostream &AbstractMatchElement::print(std::ostream &os) const {
+  os << "Match: ";
+  nyx::syntax::operator<<(os, key);
+  if(bind) {
+    os << " => ";
+    nyx::syntax::operator<<(os, bind);
+  }
+
+  os << std::endl;
+
+  for(auto &match : elements) {
+    nyx::syntax::operator<<(os, match) << std::endl;
+  }
+
+  return os;
+}
+
+
+std::ostream &AbstractMatchElement::debug(std::ostream &os) const {
+  return print(os);
+}
+
+
+void AbstractMatchElement::add(std::shared_ptr<AbstractMatchCaseElement> element) {
+  elements.emplace_back(element);
+}
+
+
+AbstractPatternElement::AbstractPatternElement(AbstractElementType type,
+                                               bool isSimple,
                                                std::shared_ptr<Token> lower,
                                                std::shared_ptr<Token> upper,
-                                               std::shared_ptr<Token> bind):
-  AbstractElement(AbstractElementType::PatternElement),
-  elem(token),
+                                               std::shared_ptr<Token> binding):
+  AbstractElement(type),
+  simple(isSimple),
   min(lower),
   max(upper),
-  ident(bind) {
+  bind(binding) {
 }
-
 
 AbstractPatternElement::~AbstractPatternElement() {
   // nothing to do here
 }
 
 
-std::ostream &AbstractPatternElement::print(std::ostream &os) const {
+AbstractSimplePatternElement::AbstractSimplePatternElement(
+    std::shared_ptr<AbstractIdentifierElement> member,
+    std::shared_ptr<Token> lower,
+    std::shared_ptr<Token> upper,
+    std::shared_ptr<Token> bind):
+  AbstractPatternElement(AbstractElementType::SimplePatternElement, true, lower, upper, bind),
+  tok(nullptr),
+  ident(member) {
+}
+
+
+AbstractSimplePatternElement::AbstractSimplePatternElement(
+    std::shared_ptr<Token> member,
+    std::shared_ptr<Token> lower,
+    std::shared_ptr<Token> upper,
+    std::shared_ptr<Token> bind):
+  AbstractPatternElement(AbstractElementType::SimplePatternElement, true, lower, upper, bind),
+  tok(member),
+  ident(nullptr) {
+}
+
+
+AbstractSimplePatternElement::~AbstractSimplePatternElement() {
+  // nothing to do here
+}
+
+
+std::ostream &AbstractSimplePatternElement::print(std::ostream &os) const {
   os << "Element: ";
-  if(elem) {
-    os  << elem->text();
+  if(tok) {
+    os << tok->text();
+  }
+  else if(ident) {
+     ident->print(os);
   }
   else {
     os << "(null)";
@@ -441,21 +638,24 @@ std::ostream &AbstractPatternElement::print(std::ostream &os) const {
     }
   }
 
-  if(ident) {
-    os << " as " << ident->text();
+  if(bind) {
+    os << " as " << bind->text();
   }
 
   return os;
 }
 
 
-std::ostream &AbstractPatternElement::debug(std::ostream &os) const {
+std::ostream &AbstractSimplePatternElement::debug(std::ostream &os) const {
   os << "Element: ";
-  if(elem) {
-    os << elem->fileName()     << ":"
-       << elem->lineNumber()   << "."
-       << elem->columnNumber() << "  "
-       << elem->text()         << std::endl;
+  if(tok) {
+    os << tok->fileName()     << ":"
+       << tok->lineNumber()   << "."
+       << tok->columnNumber() << "  "
+       << tok->text()         << std::endl;
+  }
+  else if(ident) {
+    ident->debug(os);
   }
   else {
     os << "(null)" << std::endl;
@@ -484,11 +684,11 @@ std::ostream &AbstractPatternElement::debug(std::ostream &os) const {
   }
 
   os << "Identifier: ";
-  if(ident) {
-    os << ident->fileName()     << ":"
-       << ident->lineNumber()   << "."
-       << ident->columnNumber() << "  "
-       << ident->text()         << std::endl;
+  if(bind) {
+    os << bind->fileName()     << ":"
+       << bind->lineNumber()   << "."
+       << bind->columnNumber() << "  "
+       << bind->text()         << std::endl;
   }
   else {
     os << "(null)" << std::endl;
@@ -498,23 +698,52 @@ std::ostream &AbstractPatternElement::debug(std::ostream &os) const {
 }
 
 
-AbstractPatternGroup::AbstractPatternGroup(std::shared_ptr<AbstractPatternElement> simple,
-                                           std::shared_ptr<Token>                  lower,
-                                           std::shared_ptr<Token>                  upper,
-                                           std::shared_ptr<Token>                  bind):
-  AbstractCompoundElement<AbstractPatternElement>(AbstractElementType::PatternGroup, simple),
-  min(lower),
-  max(upper),
-  ident(bind) {
+AbstractCompoundPatternElement::AbstractCompoundPatternElement(
+    std::shared_ptr<Token> lower,
+    std::shared_ptr<Token> upper,
+    std::shared_ptr<Token> bind):
+  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractPatternElement>() {
 }
 
 
-AbstractPatternGroup::~AbstractPatternGroup(){
+AbstractCompoundPatternElement::AbstractCompoundPatternElement(
+    std::shared_ptr<AbstractPatternElement> member,
+    std::shared_ptr<Token> lower,
+    std::shared_ptr<Token> upper,
+    std::shared_ptr<Token> bind):
+  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractPatternElement>(member) {
+}
+
+
+AbstractCompoundPatternElement::AbstractCompoundPatternElement(
+    const std::vector<std::shared_ptr<AbstractPatternElement>> &compound,
+    std::shared_ptr<Token> lower,
+    std::shared_ptr<Token> upper,
+    std::shared_ptr<Token> bind):
+  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractPatternElement>(compound) {
+}
+
+
+AbstractCompoundPatternElement::AbstractCompoundPatternElement(
+    iterator start,
+    iterator end,
+    std::shared_ptr<Token> lower,
+    std::shared_ptr<Token> upper,
+    std::shared_ptr<Token> bind):
+  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractCompoundMixin<AbstractPatternElement>(start, end) {
+}
+
+
+AbstractCompoundPatternElement::~AbstractCompoundPatternElement() {
   // nothing to do here
 }
 
 
-std::ostream &AbstractPatternGroup::print(std::ostream &os) const {
+std::ostream &AbstractCompoundPatternElement::print(std::ostream &os) const {
   os << "Group:";
 
   if(min || max) {
@@ -532,43 +761,116 @@ std::ostream &AbstractPatternGroup::print(std::ostream &os) const {
     else {
       os << "(null)";
     }
+
+    if(!bind) {
+      os << ':';
+    }
   }
 
-  if(ident) {
-    os << " as " << ident->text();
+  if(bind) {
+    os << " as " << bind->text() << ':';
   }
 
-  os << std::endl;
+  os << ' ';
 
-  for(auto &pattern : elements) {
-    os << pattern << std::endl;
+  auto iter = begin(), end = this->end();
+
+  while(iter != end) {
+    nyx::syntax::operator<<(os, *iter);
+
+    if(++iter != end) {
+      os << ' ';
+    }
   }
 
   return os;
 }
 
 
-void AbstractPatternGroup::add(std::shared_ptr<AbstractPatternElement> element) {
+std::ostream &AbstractCompoundPatternElement::debug(std::ostream &os) const {
+  os << "Group:" << std::endl << "Lower: ";
+  if(min) {
+    os << min->fileName()     << ":"
+       << min->lineNumber()   << "."
+       << min->columnNumber() << "  "
+       << min->text()         << std::endl;
+  }
+  else {
+    os << "(null)" << std::endl;
+  }
+
+  os << "Upper: ";
+  if(max) {
+    os << max->fileName()     << ":"
+       << max->lineNumber()   << "."
+       << max->columnNumber() << "  "
+       << max->text()         << std::endl;
+  }
+  else {
+    os << "(null)" << std::endl;
+  }
+
+  os << "Bound: ";
+  if(bind) {
+    os << bind->fileName()     << ":"
+       << bind->lineNumber()   << "."
+       << bind->columnNumber() << "  "
+       << bind->text()         << std::endl;
+  }
+  else {
+    os << "(null)" << std::endl;
+  }
+
+  for(auto &pattern : elements) {
+    pattern->debug(os);
+  }
+
+  return os;
+}
+
+
+void AbstractCompoundPatternElement::add(std::shared_ptr<AbstractPatternElement> element) {
   elements.emplace_back(element);
 }
 
 
-AbstractPatternAlternates::AbstractPatternAlternates(std::shared_ptr<AbstractPatternGroup> simple):
-  AbstractCompoundElement<AbstractPatternGroup>(AbstractElementType::Pattern, simple) {
+AbstractPatternList::AbstractPatternList(std::shared_ptr<AbstractPatternElement> member):
+  AbstractElement(AbstractElementType::Pattern),
+  AbstractCompoundMixin<AbstractPatternElement>(member) {
 }
 
 
-AbstractPatternAlternates::~AbstractPatternAlternates() {
+AbstractPatternList::AbstractPatternList():
+  AbstractElement(AbstractElementType::Pattern),
+  AbstractCompoundMixin<AbstractPatternElement>() {
+}
+
+
+AbstractPatternList::AbstractPatternList(
+    const std::vector<std::shared_ptr<AbstractPatternElement>> &compound):
+  AbstractElement(AbstractElementType::Pattern),
+  AbstractCompoundMixin<AbstractPatternElement>(compound) {
+}
+
+
+AbstractPatternList::AbstractPatternList(
+    iterator start, iterator end):
+  AbstractElement(AbstractElementType::Pattern),
+  AbstractCompoundMixin<AbstractPatternElement>(start, end) {
+}
+
+
+AbstractPatternList::~AbstractPatternList() {
   // nothing to do here
 }
 
 
-std::ostream &AbstractPatternAlternates::print(std::ostream &os) const {
+std::ostream &AbstractPatternList::print(std::ostream &os) const {
   auto iter = begin(), end = this->end();
-  os << "Alternates:" << std::endl;
+  os << "Pattern:" << std::endl;
 
   while(iter != end) {
-    os << *iter;
+    nyx::syntax::operator<<(os, *iter);
 
     if(++iter != end) {
       os << " |";
@@ -581,34 +883,78 @@ std::ostream &AbstractPatternAlternates::print(std::ostream &os) const {
 }
 
 
-void AbstractPatternAlternates::add(std::shared_ptr<AbstractPatternGroup> group) {
-  elements.emplace_back(group);
-}
+std::ostream &AbstractPatternList::debug(std::ostream &os) const {
+  auto iter = begin(), end = this->end();
+  os << "Pattern:" << std::endl;
 
-
-AbstractPatternList::AbstractPatternList(std::shared_ptr<AbstractPatternAlternates> simple):
-  AbstractCompoundElement<AbstractPatternAlternates>(AbstractElementType::Pattern, simple) {
-}
-
-AbstractPatternList::~AbstractPatternList() {
-  // nothing to do here
-}
-
-
-std::ostream &AbstractPatternList::print(std::ostream &os) const {
-  os << "Patterns:" << std::endl;
-
-  for(auto &pattern : elements) {
-    os << pattern << std::endl;
+  while(iter != end) {
+    (*iter)->debug(os);
   }
 
   return os;
 }
 
 
-void AbstractPatternList::add(std::shared_ptr<AbstractPatternAlternates> alt) {
-  elements.emplace_back(alt);
+void AbstractPatternList::add(std::shared_ptr<AbstractPatternElement> group) {
+  elements.emplace_back(group);
 }
+
+
+//AbstractPatternList::AbstractPatternList():
+//  AbstractElement(AbstractElementType::Pattern),
+//  AbstractCompoundMixin<AbstractPatternAlternates>() {
+//}
+//
+//
+//AbstractPatternList::AbstractPatternList(std::shared_ptr<AbstractPatternAlternates> simple):
+//  AbstractElement(AbstractElementType::Pattern),
+//  AbstractCompoundMixin<AbstractPatternAlternates>(simple) {
+//}
+//
+//
+//AbstractPatternList::AbstractPatternList(
+//    const std::vector<std::shared_ptr<AbstractPatternAlternates>> &compound):
+//  AbstractElement(AbstractElementType::Pattern),
+//  AbstractCompoundMixin<AbstractPatternAlternates>(compound) {
+//}
+//
+//
+//AbstractPatternList::AbstractPatternList(iterator start, iterator end):
+//  AbstractElement(AbstractElementType::Pattern),
+//  AbstractCompoundMixin<AbstractPatternAlternates>(start, end) {
+//}
+//
+//
+//AbstractPatternList::~AbstractPatternList() {
+//  // nothing to do here
+//}
+//
+//
+//std::ostream &AbstractPatternList::print(std::ostream &os) const {
+//  os << "Patterns:" << std::endl;
+//
+//  for(auto &pattern : elements) {
+//    os << pattern << std::endl;
+//  }
+//
+//  return os;
+//}
+//
+//
+//std::ostream &AbstractPatternList::debug(std::ostream &os) const {
+//  os << "Patterns:" << std::endl;
+//
+//  for(auto &pattern : elements) {
+//    pattern->debug(os);
+//  }
+//
+//  return os;
+//}
+//
+//
+//void AbstractPatternList::add(std::shared_ptr<AbstractPatternAlternates> alt) {
+//  elements.emplace_back(alt);
+//}
 
 
 AbstractStorageElement::AbstractStorageElement(std::shared_ptr<AbstractIdentifierElement> name):
@@ -631,10 +977,12 @@ AbstractStorageElement::~AbstractStorageElement(){
 }
 
 std::ostream &AbstractStorageElement::print(std::ostream &os) const {
-  os << "Storage: " << ident;
+  os << "Storage: ";
+  nyx::syntax::operator<<(os, ident);
 
   if(kind) {
-    os << " as " << kind;
+    os << " as ";
+    nyx::syntax::operator<<(os, kind);
   }
 
   return os;
@@ -662,9 +1010,28 @@ std::ostream &AbstractStorageElement::debug(std::ostream &os) const {
 };
 
 
-//class AbstractStorageList: public AbstractCompoundElement<AbstractStorageElement> {
+AbstractStorageList::AbstractStorageList():
+  AbstractElement(AbstractElementType::StorageList),
+  AbstractCompoundMixin<AbstractStorageElement>() {
+}
+
+
 AbstractStorageList::AbstractStorageList(std::shared_ptr<AbstractStorageElement> simple):
-  AbstractCompoundElement<AbstractStorageElement>(AbstractElementType::StorageList, simple) {
+  AbstractElement(AbstractElementType::StorageList),
+  AbstractCompoundMixin<AbstractStorageElement>(simple) {
+}
+
+
+AbstractStorageList::AbstractStorageList(
+    const std::vector<std::shared_ptr<AbstractStorageElement>> &compound):
+  AbstractElement(AbstractElementType::StorageList),
+  AbstractCompoundMixin<AbstractStorageElement>(compound) {
+}
+
+
+AbstractStorageList::AbstractStorageList(iterator start, iterator end):
+  AbstractElement(AbstractElementType::StorageList),
+  AbstractCompoundMixin<AbstractStorageElement>(start, end) {
 }
 
 
@@ -677,7 +1044,18 @@ std::ostream &AbstractStorageList::print(std::ostream &os) const {
   os << "StorageList:" << std::endl;
 
   for(auto &storage : elements) {
-    os << storage << std::endl;
+    nyx::syntax::operator<<(os, storage) << std::endl;
+  }
+
+  return os;
+}
+
+
+std::ostream &AbstractStorageList::debug(std::ostream &os) const {
+  os << "StorageList:" << std::endl;
+
+  for(auto &storage : elements) {
+    storage->debug(os) << std::endl;
   }
 
   return os;
@@ -689,28 +1067,39 @@ void AbstractStorageList::add(std::shared_ptr<AbstractStorageElement> storage) {
 }
 
 
-AbstractSExpr::AbstractSExpr():
+AbstractSexpr::AbstractSexpr():
   tok_val(nullptr),
   sexpr_val(nullptr),
-  sexpr_next(nullptr) {
+  sexpr_next(nullptr),
+  ident_val(nullptr) {
 }
 
 
-AbstractSExpr::AbstractSExpr(std::shared_ptr<Token> token):
+AbstractSexpr::AbstractSexpr(std::shared_ptr<Token> token):
   tok_val(token),
   sexpr_val(nullptr),
-  sexpr_next(nullptr) {
+  sexpr_next(nullptr),
+  ident_val(nullptr) {
 }
 
 
-AbstractSExpr::AbstractSExpr(std::shared_ptr<AbstractSExpr> sexpr):
+AbstractSexpr::AbstractSexpr(std::shared_ptr<AbstractSexpr> sexpr):
   tok_val(nullptr),
   sexpr_val(sexpr),
-  sexpr_next(nullptr) {
+  sexpr_next(nullptr),
+  ident_val(nullptr) {
 }
 
 
-std::ostream &AbstractSExpr::print(std::ostream &os) const {
+AbstractSexpr::AbstractSexpr(std::shared_ptr<AbstractIdentifierElement> ident):
+  tok_val(nullptr),
+  sexpr_val(nullptr),
+  sexpr_next(nullptr),
+  ident_val(ident) {
+}
+
+
+std::ostream &AbstractSexpr::print(std::ostream &os) const {
   auto ptr = this;
   os << '(';
 
@@ -720,6 +1109,9 @@ std::ostream &AbstractSExpr::print(std::ostream &os) const {
     }
     else if(ptr->isSexpr()) {
       ptr->sexpr()->print(os);
+    }
+    else if(ptr->isIdentifier()) {
+      ptr->identifier()->print(os);
     }
     else {
       os << "[nil]";
@@ -735,12 +1127,12 @@ std::ostream &AbstractSExpr::print(std::ostream &os) const {
 }
 
 
-std::ostream &AbstractSExpr::debug(std::ostream &os) const {
+std::ostream &AbstractSexpr::debug(std::ostream &os) const {
   return print(os);
 }
 
 
-AbstractCodeSnippet::AbstractCodeSnippet(std::shared_ptr<AbstractSExpr> sexpr):
+AbstractCodeSnippet::AbstractCodeSnippet(std::shared_ptr<AbstractSexpr> sexpr):
   AbstractElement(AbstractElementType::Code),
   expr(sexpr) {
 }
@@ -794,13 +1186,12 @@ AbstractRuleElement::~AbstractRuleElement() {
 
 
 std::ostream &AbstractRuleElement::print(std::ostream &os) const {
-  os << "Rule:"  << std::endl;
-  os << ident    << std::endl;
-  os << pat      << std::endl;
-  os << store    << std::endl;
-  os << validate << std::endl;
-  os << enc      << std::endl;
-  os << dec      << std::endl;
+  ident->print(os << "Rule: ") << std::endl;
+  if(pat)      { pat->print(os)      << std::endl; }
+  if(store)    { store->print(os)    << std::endl; }
+  if(validate) { validate->print(os) << std::endl; }
+  if(enc)      { enc->print(os)      << std::endl; }
+  if(dec)      { dec->print(os)      << std::endl; }
 
   return os;
 }
@@ -813,10 +1204,26 @@ std::ostream &AbstractRuleElement::debug(std::ostream &os) const {
 }
 
 
+AbstractNamespaceElement::AbstractNamespaceElement():
+  AbstractElement(AbstractElementType::Namespace),
+  AbstractLookupMixin<AbstractRuleElement>(),
+  ident(
+    std::make_shared<AbstractIdentifierElement>(
+      std::make_shared<Token>("", nullptr, nullptr, 0, 0, Lexeme::Identifier)
+    )
+  ),
+  aliases(std::make_shared<AbstractAliasList>()),
+  imports(std::make_shared<AbstractImportList>()) {
+}
+
+
 AbstractNamespaceElement::AbstractNamespaceElement(std::shared_ptr<AbstractIdentifierElement> name,
-                                                   bool                                        module):
-  AbstractElement(module ? AbstractElementType::Module : AbstractElementType::Namespace),
-  ident(name) {
+                                                   bool                                       emit):
+  AbstractElement(emit ? AbstractElementType::Namespace : AbstractElementType::Module),
+  AbstractLookupMixin<AbstractRuleElement>(),
+  ident(name),
+  aliases(std::make_shared<AbstractAliasList>()),
+  imports(std::make_shared<AbstractImportList>()) {
 }
 
 
@@ -825,19 +1232,40 @@ AbstractNamespaceElement::~AbstractNamespaceElement() {
 }
 
 std::ostream &AbstractNamespaceElement::print(std::ostream &os) const {
-  os << "Namespace: " << ident << std::endl;
+  ident->print(os << "Namespace: ") << std::endl;
 
-  for(auto iter = begin(), end = this->end(); iter !=end; ++iter) {
-    os << iter->second << std::endl;
+  for(auto &entry : elements) {
+    entry.second->print(os);
   }
+
+  aliases->print(os);
+  imports->print(os);
 
   return os;
 }
 
 
 std::ostream &AbstractNamespaceElement::debug(std::ostream &os) const {
-  print(os);
+  ident->print(os << "Namespace: ") << std::endl;
+
+  for(auto &entry : elements) {
+    entry.second->debug(os) << std::endl;
+  }
+
+  aliases->debug(os);
+  imports->debug(os);
+
   return os;
+}
+
+
+void AbstractNamespaceElement::add(std::shared_ptr<AbstractImportElement> import) {
+  imports->add(import);
+}
+
+
+void AbstractNamespaceElement::add(std::shared_ptr<AbstractAliasElement> alias) {
+  aliases->add(alias);
 }
 
 
@@ -852,15 +1280,18 @@ void AbstractNamespaceElement::add(std::shared_ptr<AbstractRuleElement> rule) {
 
 
 AbstractSyntaxTree::AbstractSyntaxTree():
-  spaces() {
+  AbstractLookupMixin(),
+  current(elements.emplace("", std::make_shared<AbstractNamespaceElement>()).first->second) {
 }
 
 
 std::ostream &AbstractSyntaxTree::print(std::ostream &os) const {
   os << "AST:" << std::endl;
 
-  for(auto &ns : spaces) {
-    os << ns << std::endl;
+  for(auto &ns : elements) {
+    if(ns.first != "" || ns.second->size()) {
+      ns.second->print(os) << std::endl;
+    }
   }
 
   return os;
@@ -868,19 +1299,51 @@ std::ostream &AbstractSyntaxTree::print(std::ostream &os) const {
 
 
 std::ostream &AbstractSyntaxTree::debug(std::ostream &os) const {
-  print(os);
+  os << "AST:" << std::endl;
+
+  for(auto &ns : elements) {
+    ns.second->debug(os) << std::endl;
+  }
+
   return os;
 }
 
 
 std::shared_ptr<AbstractNamespaceElement> AbstractSyntaxTree::currentNamespace() {
-  return spaces.back();
+  return current;
 }
 
 
 std::shared_ptr<AbstractNamespaceElement>
 AbstractSyntaxTree::addNamespace(std::shared_ptr<AbstractIdentifierElement> ident, bool emit) {
-  spaces.emplace_back(std::make_shared<AbstractNamespaceElement>(ident, emit));
-  return currentNamespace();
+  if(ident && ident->size() > 0) {
+    current = elements.emplace(
+                ident->toString(),
+                std::make_shared<AbstractNamespaceElement>(ident, emit)
+              ).first->second;
+    return current;
+  }
+
+  return nullptr;
+}
+
+
+std::shared_ptr<AbstractAliasList> AbstractSyntaxTree::currentAliasList() {
+  return current->aliasList();
+}
+
+
+void AbstractSyntaxTree::addAlias(std::shared_ptr<AbstractAliasElement> alias) {
+  current->add(alias);
+}
+
+
+std::shared_ptr<AbstractImportList> AbstractSyntaxTree::currentImportList() {
+  return current->importList();
+}
+
+
+void AbstractSyntaxTree::addImport(std::shared_ptr<AbstractImportElement> import) {
+  current->add(import);
 }
 
