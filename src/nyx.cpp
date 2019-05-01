@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
   if(retVal == EXIT_SUCCESS) {
     if(auto plan = nyx::Plan::generate(registry)) {
       if(auto plugin = nyx::Plugin::load(fs, settings.language, settings.options)) {
-        retVal = plugin->execute(plan);
+        retVal = plugin->execute(*plan);
       }
       else {
         retVal = EXIT_FAILURE;
@@ -142,6 +142,14 @@ static void processCommandLine(Settings &settings, int argc, char **argv) {
 
   if(shouldExit) {
     exit(EXIT_SUCCESS);
+  }
+
+  // place the output directory in the list of plugin options
+  if(settings.outdir != ".") {
+    std::string outdir;
+    outdir.reserve(settings.outdir.size() + 7);
+    outdir.append("outdir=").append(settings.outdir);
+    settings.options.emplace_back(outdir);
   }
 
   for(int arg = optind; arg < argc; ++arg) {
