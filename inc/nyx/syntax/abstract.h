@@ -24,13 +24,15 @@ enum class AbstractElementType {
   Module,
   Namespace,
   Pattern,
-  SimplePatternElement,
-  CompoundPatternElement,
-  PatternList,
+  SimplePattern,
+  CompoundPattern,
   Rule,
   StorageElement,
   StorageList
 };
+
+
+const char *toString(AbstractElementType type);
 
 
 class AbstractElement {
@@ -101,11 +103,11 @@ class AbstractCompoundMixin {
       return size() == 0;
     }
 
-    inline std::shared_ptr<AbstractElement> &operator[](int idx) {
+    inline std::shared_ptr<BASE> &operator[](int idx) {
       return elements[idx];
     }
 
-    inline std::shared_ptr<const AbstractElement> &operator[](int idx) const {
+    inline const std::shared_ptr<BASE> &operator[](int idx) const {
       return elements[idx];
     }
 
@@ -165,7 +167,7 @@ class AbstractLookupMixin {
      const std::shared_ptr<BASE> operator[](const std::string key) const {
       auto iter = elements.find(key);
 
-      if(iter != end) {
+      if(iter != end()) {
         return iter->second;
       }
 
@@ -186,7 +188,7 @@ class AbstractLookupMixin {
       elements.emplace(key, simple);
     }
 
-    AbstractLookupMixin(const std::map<const std::string, std::shared_ptr<BASE>> &compound):
+    AbstractLookupMixin(const std::map<std::string, std::shared_ptr<BASE>> &compound):
       elements(compound) {
     }
 
@@ -194,7 +196,7 @@ class AbstractLookupMixin {
       elements(start, end) {
     }
 
-    std::map<const std::string, std::shared_ptr<BASE>> elements;
+    std::map<std::string, std::shared_ptr<BASE>> elements;
 };
 
 
@@ -347,7 +349,7 @@ class AbstractAliasList: public AbstractElement, public AbstractLookupMixin<Abst
   public:
     AbstractAliasList();
     AbstractAliasList(const std::string &key, std::shared_ptr<AbstractAliasElement> simple);
-    AbstractAliasList(const std::map<const std::string, std::shared_ptr<AbstractAliasElement>> &multi);
+    AbstractAliasList(const std::map<std::string, std::shared_ptr<AbstractAliasElement>> &multi);
     AbstractAliasList(iterator first, iterator end);
     virtual ~AbstractAliasList();
 
@@ -425,11 +427,23 @@ class AbstractPatternElement: public AbstractElement {
       return min;
     }
 
+    auto minimum() const {
+      return min;
+    }
+
     auto maximum() {
       return max;
     }
 
+    auto maximum() const {
+      return max;
+    }
+
     auto binding() {
+      return bind;
+    }
+
+    auto binding() const {
       return bind;
     }
 
@@ -463,11 +477,11 @@ class AbstractSimplePatternElement: public AbstractPatternElement {
     virtual std::ostream &debug(std::ostream &os) const;
 
     inline bool isToken() const {
-      return static_cast<bool>(min);
+      return static_cast<bool>(tok);
     }
 
     inline bool isIdentifier() const {
-      return static_cast<bool>(max);
+      return static_cast<bool>(ident);
     }
 
     auto token() {
@@ -593,7 +607,15 @@ class AbstractStorageElement: public AbstractElement {
       return ident;
     }
 
+    auto identifier() const {
+      return ident;
+    }
+
     auto type() {
+      return kind;
+    }
+
+    auto type() const {
       return kind;
     }
 
@@ -729,7 +751,15 @@ class AbstractRuleElement: public AbstractElement {
       return ident;
     }
 
+    auto identifier() const {
+      return ident;
+    }
+
     auto pattern() {
+      return pat;
+    }
+
+    auto pattern() const {
       return pat;
     }
 
@@ -737,7 +767,15 @@ class AbstractRuleElement: public AbstractElement {
       return store;
     }
 
+    auto storage() const {
+      return store;
+    }
+
     auto validation() {
+      return validate;
+    }
+
+    auto validation() const {
       return validate;
     }
 
@@ -745,23 +783,31 @@ class AbstractRuleElement: public AbstractElement {
       return enc;
     }
 
+    auto encode() const {
+      return enc;
+    }
+
     auto decode() {
       return dec;
     }
 
-    inline bool hasStorage() {
+    auto decode() const {
+      return dec;
+    }
+
+    inline bool hasStorage() const {
       return static_cast<bool>(store);
     }
 
-    inline bool hasValidation() {
+    inline bool hasValidation() const {
       return static_cast<bool>(validate);
     }
 
-    inline bool hasEncode() {
+    inline bool hasEncode() const {
       return static_cast<bool>(enc);
     }
 
-    inline bool hasDecode() {
+    inline bool hasDecode() const {
       return static_cast<bool>(dec);
     }
 

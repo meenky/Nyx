@@ -1,7 +1,26 @@
 #include <nyx/syntax/abstract.h>
 
+#include <array>
+
 
 using namespace nyx::syntax;
+
+
+static const std::array<const char *, 16> ABSTRACT_ELEMENT_TYPE_STR{
+  "Alias",           "AliasList",  "Code",           "Identifier",
+  "Import",          "ImportList", "Match",          "MatchCase",
+  "Module",          "Namespace",  "Pattern",        "SimplePattern",
+  "CompoundPattern", "Rule",       "StorageElement", "StorageList"
+};
+
+
+const char *nyx::syntax::toString(AbstractElementType type) {
+  if(static_cast<int>(type) <= static_cast<int>(AbstractElementType::StorageList)) {
+    return ABSTRACT_ELEMENT_TYPE_STR[static_cast<int>(type)];
+  }
+
+  return "<INVALID>";
+}
 
 
 AbstractElement::AbstractElement(AbstractElementType          type,
@@ -417,7 +436,7 @@ AbstractAliasList::AbstractAliasList(const std::string &key,
 
 
 AbstractAliasList::AbstractAliasList(
-    const std::map<const std::string, std::shared_ptr<AbstractAliasElement>> &multi):
+    const std::map<std::string, std::shared_ptr<AbstractAliasElement>> &multi):
   AbstractElement(AbstractElementType::AliasList),
   AbstractLookupMixin<AbstractAliasElement>(multi) {
 }
@@ -587,7 +606,7 @@ AbstractSimplePatternElement::AbstractSimplePatternElement(
     std::shared_ptr<Token> lower,
     std::shared_ptr<Token> upper,
     std::shared_ptr<Token> bind):
-  AbstractPatternElement(AbstractElementType::SimplePatternElement, true, lower, upper, bind),
+  AbstractPatternElement(AbstractElementType::SimplePattern, true, lower, upper, bind),
   tok(nullptr),
   ident(member) {
 }
@@ -598,7 +617,7 @@ AbstractSimplePatternElement::AbstractSimplePatternElement(
     std::shared_ptr<Token> lower,
     std::shared_ptr<Token> upper,
     std::shared_ptr<Token> bind):
-  AbstractPatternElement(AbstractElementType::SimplePatternElement, true, lower, upper, bind),
+  AbstractPatternElement(AbstractElementType::SimplePattern, true, lower, upper, bind),
   tok(member),
   ident(nullptr) {
 }
@@ -702,7 +721,7 @@ AbstractCompoundPatternElement::AbstractCompoundPatternElement(
     std::shared_ptr<Token> lower,
     std::shared_ptr<Token> upper,
     std::shared_ptr<Token> bind):
-  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractPatternElement(AbstractElementType::CompoundPattern, false, lower, upper, bind),
   AbstractCompoundMixin<AbstractPatternElement>() {
 }
 
@@ -712,7 +731,7 @@ AbstractCompoundPatternElement::AbstractCompoundPatternElement(
     std::shared_ptr<Token> lower,
     std::shared_ptr<Token> upper,
     std::shared_ptr<Token> bind):
-  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractPatternElement(AbstractElementType::CompoundPattern, false, lower, upper, bind),
   AbstractCompoundMixin<AbstractPatternElement>(member) {
 }
 
@@ -722,7 +741,7 @@ AbstractCompoundPatternElement::AbstractCompoundPatternElement(
     std::shared_ptr<Token> lower,
     std::shared_ptr<Token> upper,
     std::shared_ptr<Token> bind):
-  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractPatternElement(AbstractElementType::CompoundPattern, false, lower, upper, bind),
   AbstractCompoundMixin<AbstractPatternElement>(compound) {
 }
 
@@ -733,7 +752,7 @@ AbstractCompoundPatternElement::AbstractCompoundPatternElement(
     std::shared_ptr<Token> lower,
     std::shared_ptr<Token> upper,
     std::shared_ptr<Token> bind):
-  AbstractPatternElement(AbstractElementType::CompoundPatternElement, false, lower, upper, bind),
+  AbstractPatternElement(AbstractElementType::CompoundPattern, false, lower, upper, bind),
   AbstractCompoundMixin<AbstractPatternElement>(start, end) {
 }
 
