@@ -10,17 +10,18 @@ class Plugin {
   public:
     ~Plugin();
 
-    static std::shared_ptr<Plugin> load(const Filesystem &fs,
+    static std::unique_ptr<Plugin> load(const Filesystem &fs,
                                         const std::string &lang,
                                         const std::vector<std::string> &opts);
 
-    int execute(std::shared_ptr<Plan> plan);
+    int execute(Plan &plan);
 
   private:
-    Plugin(void *, const std::string &);
+    Plugin(void *, const std::string &, const std::vector<std::string> &);
 
-    std::string lang;
-    void *L;
+    std::vector<std::string>  options;
+    std::string               lang;
+    void                     *L;
 };
 
 
