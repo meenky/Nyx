@@ -79,6 +79,8 @@ enum class Lexeme: int {
 };
 
 
+const char *toString(Lexeme lexeme);
+
 bool isNumeric(Lexeme lexeme, bool pattern = false);
 bool isOperator(Lexeme lexeme);
 
