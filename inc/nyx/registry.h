@@ -49,13 +49,25 @@ class Registry {
       return global;
     }
 
+    std::map<std::string, std::shared_ptr<nyx::syntax::AbstractElement>>::const_iterator
+    resolve(const std::string &key) const {
+      return global.find(key);
+    }
+
+    std::map<std::string, std::shared_ptr<nyx::syntax::AbstractElement>>::const_iterator
+    resolve(const nyx::syntax::AbstractNamespaceElement &,
+            const nyx::syntax::AbstractIdentifierElement &) const;
+
+    std::map<std::string, std::shared_ptr<nyx::syntax::AbstractElement>>::const_iterator
+    badResolve() const;
+
   protected:
     bool parse(const Filesystem &filesystem, const std::string &file, bool search);
 
-    std::map<const std::string, std::shared_ptr<nyx::syntax::AbstractSyntaxTree>>       parsed;
-    std::map<const std::string, std::shared_ptr<nyx::syntax::AbstractNamespaceElement>> emit;
-    std::map<const std::string, std::shared_ptr<nyx::syntax::AbstractNamespaceElement>> ref;
-    std::map<const std::string, std::shared_ptr<nyx::syntax::AbstractElement>>          global;
+    std::map<std::string, std::shared_ptr<nyx::syntax::AbstractSyntaxTree>>       parsed;
+    std::map<std::string, std::shared_ptr<nyx::syntax::AbstractNamespaceElement>> emit;
+    std::map<std::string, std::shared_ptr<nyx::syntax::AbstractNamespaceElement>> ref;
+    std::map<std::string, std::shared_ptr<nyx::syntax::AbstractElement>>          global;
 };
 
 

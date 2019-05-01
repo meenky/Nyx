@@ -15,10 +15,12 @@ Registry::Registry():
 
 
 static void normalize(
-    const std::map<const std::string, std::shared_ptr<nyx::syntax::AbstractNamespaceElement>> &src,
-          std::map<const std::string, std::shared_ptr<nyx::syntax::AbstractElement>>          &dst) {
+    const std::map<std::string, std::shared_ptr<nyx::syntax::AbstractNamespaceElement>> &src,
+          std::map<std::string, std::shared_ptr<nyx::syntax::AbstractElement>>          &dst) {
   for(auto &ns : src) {
     auto root = ns.second->identifier();
+    // add the namespace itself
+    dst.emplace(root->toString(), ns.second);
 
     // add all the rules
     for(auto &rule : *ns.second) {
@@ -128,5 +130,68 @@ bool Registry::parse(const Filesystem &filesystem, const std::string &file, bool
   }
 
   return false;
+}
+
+
+std::map<std::string, std::shared_ptr<AbstractElement>>::const_iterator
+Registry::badResolve() const {
+  return global.end();
+}
+
+
+std::map<std::string, std::shared_ptr<AbstractElement>>::const_iterator
+Registry::resolve(const AbstractNamespaceElement &ctx, const AbstractIdentifierElement &base) const {
+  if(base.size() == 1) {
+    auto &name = base[0];
+    // check the local rules first
+    if(ctx[name->text()]) {
+      return global.find(AbstractIdentifierElement(*ctx.identifier(), base).toString());
+    }
+
+    // try the aliases
+    const auto &aliases = *ctx.aliasList();
+    if(auto ptr = aliases[name->text()]) {
+      auto &alias = *ptr->original();
+
+      if(alias.size() == 1) { // internal alias?
+        if(ctx[alias[0]->text()]) {
+          return global.find(AbstractIdentifierElement(*ctx.identifier(), alias).toString());
+        }
+        else {
+          // last ditch effort, check the nyx namespace
+          return global.find(std::string("nyx.").append(alias[0]->text()));
+        }
+      }
+      else {
+        // all multi token aliases should be to fully quallified names
+        return global.find(alias.toString());
+      }
+    }
+
+    // last ditch effort, check the nyx namespace
+    return global.find(std::string("nyx.").append(name->text()));
+  }
+  else if(base.size() > 1) {
+    // probably an alias to a namespace and an element
+    auto &name = base[0];
+    const auto &aliases = *ctx.aliasList();
+
+    if(auto ptr = aliases[name->text()]) {
+      auto alias = ptr->alias()->toString();
+
+      // build the fully qualified name
+      for(int i = 1; i < base.size(); ++i) {
+        alias.append(1, '.').append(base[i]->text());
+      }
+
+      // if the first element was an alias, then we are committed
+      return global.find(alias);
+    }
+
+    // unaliased multi token identifier should be fully qualified names
+    return global.find(base.toString());
+  }
+
+  return badResolve();
 }
 
