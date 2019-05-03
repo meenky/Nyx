@@ -41,15 +41,15 @@ function includeImports(header, imports)
     end
   end
 
-  header:write("#include \"nyx.h\"\n",
+  header:write("#include \"nyx/runtime.h\"\n\n",
                "#include <string>\n",
                "#include <vector>\n",
                "#include <cstddef>\n",
                "#include <cstdint>\n",
                "\n\n",
-							 "namespace std {\n\n\n",
-							 "typedef ptrdiff_t ssize_t;\n\n\n",
-							 "}\n")
+               "namespace std {\n\n\n",
+               "typedef ptrdiff_t ssize_t;\n\n\n",
+               "}\n")
 end
 
 
@@ -141,6 +141,10 @@ function findInPattern(name, pattern)
           return pat.pattern["type"]
         end
       end
+    elseif pat["type"] == 'Select' then
+      if pat.ident == name then
+        return pat.pattern
+      end
     end
   end
 
@@ -166,6 +170,11 @@ function resolveType(storage, pattern)
       return TypeMap[storage.name]
     end
 
+    local val = findInPattern(storage.name, pattern)
+    if val ~= nil then
+      return val
+    end
+
     return storage.name
   end
 
@@ -181,7 +190,16 @@ function generateRuleStorage(header, storage, pattern)
     local entry = storage[i]
     local kind = resolveType(entry, pattern)
 
-    header:write('    ', kind, ' ', entry.name, ';\n')
+    if type(kind) == 'string' then
+      header:write('    ', kind, ' ', entry.name, ';\n')
+    else
+      local keys = kind.keys
+
+      for i = 1, #keys do
+        header:write('    ', kind[keys[i]], ' ', kind[keys[i]], '_', entry.name, ';\n')
+      end
+    end
+
     map[entry.name] = { raw = entry["type"], resolved = kind }
   end
 
@@ -246,110 +264,53 @@ function sexprToCpp(code, decode)
     code:write(decode.value)
   elseif decode["type"] == 'StringLiteral' then
     code:write('"', decode.value, '"')
-
-  --    local sub = decode[2]["type"]
-  --    if sub == 'Sexpr' then
-  --      generateDecode(code, decode[2])
-  --    elseif sub == 'DecimalLiteral' then
-  --      code:write("  ", decode[1].value)
-  --    end
-  --  elseif op["type"] == 'Identifier' then
-  --    if #op.value == 1 and TypeMap[op.value[1]] ~= nil then
-  --      code:write("static_cast<", TypeMap[op.value[1]], ">(", decode[1].value, ")")
-  --    else
-  --      print("While:", dump(op))
-  --    end
-  --  end
   else
     print("Invalid Sexpr:",dump(decode.value))
-		for i = 1, #decode do
+    for i = 1, #decode do
     print("             ",dump(decode[i]))
 
-		end
+    end
   end
 end
 
 
 function generateConsumeStage(code, stage, storage, final)
-  --if stage["type"] == 'Identifier' and stage.ident ~= nil then
-  --  if storage[stage.ident] ~= nil then
-  --    local raw = storage[stage.ident].raw
-
-  --    if #raw == 1 then
-  --      if raw[1] == 'string' or raw[1] == 'vector' then
-  --        if stage.minimum == stage.maximum then
-  --          code:write("  ", stage.ident, ".assign(&_raw__[_idx__], &_raw__[_idx__ + ", stage.maximum, "]);\n",
-  --                     "  _idx__ += ", stage.maximum, ";\n")
-  --          return
-  --        else
-  --          code:write("  ", stage.ident, ".clear();\n")
-  --        end
-  --      elseif TypeMap[stage.pattern] ~= nil then
-  --        if stage.pattern == 'i32b' then
-  --          code:write("  ", stage.ident,
-  --                     " = (static_cast<std::int32_t>(_raw__[_idx__]) << 24) |",
-  --                       " (static_cast<std::int32_t>(_raw__[_idx__ + 1]) << 16) |",
-  --                       " (static_cast<std::int32_t>(_raw__[_idx__ + 2]) << 8) |",
-  --                        " static_cast<std::int32_t>(_raw__[_idx__ + 3]);\n",
-  --                     "  _idx__ += 4;\n")
-  --          return
-  --        else
-  --          code:write("  ", stage.ident, " = 0;\n")
-  --        end
-  --      end
-  --    end
-  --  elseif stage.minimum == stage.maximum and stage.maximum == 1 then
-  --    if TypeMap[stage.pattern] ~= nil then
-  --      if stage.pattern == 'i32b' then
-  --        code:write("  ", stage.ident,
-  --                   " = (static_cast<std::int32_t>(_raw__[_idx__]) << 24) |",
-  --                     " (static_cast<std::int32_t>(_raw__[_idx__ + 1]) << 16) |",
-  --                     " (static_cast<std::int32_t>(_raw__[_idx__ + 2]) << 8) |",
-  --                      " static_cast<std::int32_t>(_raw__[_idx__ + 3]);\n",
-  --                   "  _idx__ += 4;\n")
-  --        return
-  --      else
-  --        code:write("  ", TypeMap[stage.pattern], " ", stage.ident, " = 0;\n")
-  --      end
-  --    end
-  --  end
-  --end
-
   if stage["type"] == 'Identifier' or
-		stage["type"] == 'PatternMatch' or
-		stage["type"] == 'Numeric' then
+     stage["type"] == 'PatternMatch' or
+     stage["type"] == 'Numeric' then
     if stage.ident ~= nil and storage[stage.ident] ~= nil then
       local raw = storage[stage.ident].raw
 
       if raw ~= nil and #raw == 1 then
         if raw[1] == 'string' or raw[1] == 'vector' then
           code:write("    ", stage.ident, ".clear();\n")
-				elseif stage["type"] == 'Numeric' then
+        elseif stage["type"] == 'Numeric' then
           code:write("    ", stage.ident, " = 0;\n")
         end
       end
-		elseif stage.ident ~= nil and storage[stage.ident] == nil then
-			if stage["type"] == 'Numeric' then
+    elseif stage.ident ~= nil and storage[stage.ident] == nil then
+      if stage["type"] == 'Numeric' then
         code:write("    ", TypeMap[stage.pattern["type"]], ' ', stage.ident, " = 0;\n")
-			end
+      elseif stage["type"] == 'Identifier' then
+        code:write("    ", stage.pattern, ' ', stage.ident, ";\n")
+      end
     end
   end
 
-  if((type(stage.maximum) == "number" and stage.maximum > 0) or
-      type(stage.maximum) == "string") then
+  if type(stage.maximum) == "number" and stage.maximum > 0 then
     code:write("    for(_rep__ = 0; _rep__ < ", stage.maximum, "; ++_rep__) {\n")
+  elseif type(stage.maximum) == "string" then
+    local kind = storage[stage.maximum]
+
+    if kind == nil or TypeMap[kind.resolved] ~= nil then
+      code:write("    for(_rep__ = 0; _rep__ < ", stage.maximum, "; ++_rep__) {\n")
+    else
+      code:write("    for(_rep__ = 0; _rep__ < ", stage.maximum, ".val; ++_rep__) {\n")
+    end
   else
     code:write("    for(_rep__ = 0; true; ++_rep__) {\n")
   end
 
-  --if stage["type"] == 'Identifier' then
-  --  if stage.ident ~= nil then
-  --    if stage.pattern == 'u8' then
-
-  --    else
-  --    end
-  --  end
-  --end
   if stage["type"] == 'ExactMatch' then
     local arr = stage.pattern
     code:write("      if(_max__ - _idx__ < ", #arr, " ||\n")
@@ -398,7 +359,7 @@ function generateConsumeStage(code, stage, storage, final)
                    "        ", stage.ident, ".emplace_back(_tmp__);\n")
       else
         code:write("        _tmp__ = *reinterpret_cast<const ", TypeMap[pat["type"]],
-				                    " *>(&_raw__[_idx__]);\n",
+                            " *>(&_raw__[_idx__]);\n",
                    "        ", stage.ident, ".emplace_back(_tmp__);\n")
       end
     else
@@ -442,13 +403,44 @@ function generateConsumeStage(code, stage, storage, final)
                  "      }\n",
                  "      _idx__ += result;\n")
     end
+  elseif stage["type"] == 'Select' then
+    local pat = stage.pattern
+    local keys = pat.keys
+
+    for i = 1, #keys do
+      if i == 1 then
+        code:write("      if(", pat.reference, " == ", keys[i], ") {\n")
+      else
+        code:write("      else if(", pat.reference, " == ", keys[i], ") {\n")
+      end
+      code:write("        auto result = ", pat[keys[i]], '_', stage.ident,
+                          ".consume(&_raw__[_idx__], _max__ - _idx__);\n",
+                 "        if(result < 0) {\n",
+                 "          break;\n",
+                 "        }\n",
+                 "        _idx__ += result;\n",
+                 "      }")
+    end
+    code:write("      else {\n",
+               "        break;\n",
+               "      }\n")
   else
     io.write("Unhandled stage: ", dump(stage),'\n')
   end
 
   code:write("    }\n")
-  if type(stage.minimum) == "string" or stage.minimum > 0 then
+  if type(stage.minimum) == "number" and stage.minimum > 0 then
     code:write("    if(_rep__ < ", stage.minimum, ") {\n")
+    code:write("      break;\n")
+    code:write("    }\n")
+	elseif type(stage.minimum) == 'string' then
+    local kind = storage[stage.maximum]
+
+    if kind == nil or TypeMap[kind.resolved] ~= nil then
+      code:write("    if(_rep__ < ", stage.minimum, ") {\n")
+    else
+      code:write("    if(_rep__ < ", stage.minimum, ".val) {\n")
+    end
     code:write("      break;\n")
     code:write("    }\n")
   end
@@ -456,12 +448,31 @@ function generateConsumeStage(code, stage, storage, final)
 end
 
 
+function shouldCaptureRawBytes(pattern, storage)
+  if pattern.ident ~= nil and storage[pattern.ident] == nil then
+    return true
+  end
+
+  return false
+end
+
 function generateConsumeAlternate(code, pattern, storage, decode, validate, final)
   code:write("  do {\n")
 
   if pattern["type"] == "Group" then
+    local rawBytes = shouldCaptureRawBytes(pattern, storage)
+
+    if rawBytes then
+      code:write("    _start__ = _idx__;\n")
+    end
+
     for i = 1, #pattern, 1 do
       generateConsumeStage(code, pattern[i], storage, decode)
+    end
+
+    if rawBytes then
+      code:write("    std::vector<std::uint8_t> ", pattern.ident,
+                      "(&_raw__[_start__], &_raw__[_idx__]);\n")
     end
   else
     generateConsumeStage(code, pattern, storage, decode)
@@ -475,13 +486,13 @@ function generateConsumeAlternate(code, pattern, storage, decode, validate, fina
     code:write("\n")
   end
 
-	if validate ~= nil then
-		code:write("    if(!(")
+  if validate ~= nil then
+    code:write("    if(!(")
     sexprToCpp(code, validate[1])
-		code:write(")) {\n",
-		           "      break;\n",
-							 "    }\n\n")
-	end
+    code:write(")) {\n",
+               "      break;\n",
+               "    }\n\n")
+  end
 
   code:write("    return _idx__;\n")
   code:write("  } while(false);\n\n")
@@ -507,7 +518,7 @@ function generateRuleClass(header, code, rule, ns)
   local namespace = table.concat(ns, '::')
 
   code:write("std::ssize_t ", rule.name,
-	           "::consume(const std::uint8_t *_raw__, std::size_t _max__) {\n",
+             "::consume(const std::uint8_t *_raw__, std::size_t _max__) {\n",
              "  int _rep__;\n",
              "  std::ssize_t _idx__ = 0;\n")
   if rule.decode ~= nil then
@@ -521,7 +532,7 @@ function generateRuleClass(header, code, rule, ns)
   generateConsumeAlternate(code, rule.pattern[#rule.pattern], storage, rule.decode, rule.validate)
   code:write("  return -1;\n}\n\n\n");
 
-	code:write("std::size_t ", rule.name, "::size() const {\n")
+  code:write("std::size_t ", rule.name, "::size() const {\n")
   code:write("  return 0;\n}\n\n\n");
 
   code:write("std::ssize_t ", rule.name,

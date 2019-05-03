@@ -23,8 +23,8 @@ nyx::crc::crc8(std::uint8_t                     poly, std::uint8_t seed,
 
 
 std::uint16_t
-nyx::crc::crc16(std::uint16_t                     poly, std::uint16_t seed,
-                const std::vector<std::uint16_t> &data, std::uint16_t mask) {
+nyx::crc::crc16(std::uint16_t                    poly, std::uint16_t seed,
+                const std::vector<std::uint8_t> &data, std::uint16_t mask) {
   auto crc = seed;
 
   for(auto byte : data) {
@@ -45,8 +45,8 @@ nyx::crc::crc16(std::uint16_t                     poly, std::uint16_t seed,
 
 
 std::uint32_t
-nyx::crc::crc32(std::uint32_t                     poly, std::uint32_t seed,
-                const std::vector<std::uint32_t> &data, std::uint32_t mask) {
+nyx::crc::crc32(std::uint32_t                    poly, std::uint32_t seed,
+                const std::vector<std::uint8_t> &data, std::uint32_t mask) {
   auto crc = seed;
 
   for(auto byte : data) {
@@ -67,8 +67,8 @@ nyx::crc::crc32(std::uint32_t                     poly, std::uint32_t seed,
 
 
 std::uint64_t
-nyx::crc::crc64(std::uint64_t                     poly, std::uint8_t seed,
-                const std::vector<std::uint64_t> &data, std::uint8_t mask) {
+nyx::crc::crc64(std::uint64_t                    poly, std::uint8_t seed,
+                const std::vector<std::uint8_t> &data, std::uint8_t mask) {
   auto crc = seed;
 
   for(auto byte : data) {
