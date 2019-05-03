@@ -628,6 +628,44 @@ AbstractSimplePatternElement::~AbstractSimplePatternElement() {
 }
 
 
+bool AbstractPatternElement::isLiteral() const {
+  if(isSimple()) {
+    auto &simple = *reinterpret_cast<const AbstractSimplePatternElement *>(this);
+
+    if(simple.isToken()) {
+      switch(simple.token()->lexeme()) {
+        case Lexeme::BinaryLiteral:
+        case Lexeme::OctalLiteral:
+        case Lexeme::DecimalLiteral:
+        case Lexeme::HexadecimalLiteral:
+        case Lexeme::StringLiteral:
+          return true;
+        break;
+      }
+    }
+  }
+
+  return false;
+}
+
+
+bool AbstractPatternElement::isVariableRepeat() const {
+  if(min) {
+    auto &str = min->text();
+
+    if(max && str != max->text()) {
+      return true;
+    }
+
+    if(str.size() == 1) {
+      return str[0] == '?' || str[0] == '+' || str[0] == '*';
+    }
+  }
+
+  return false;
+}
+
+
 std::ostream &AbstractSimplePatternElement::print(std::ostream &os) const {
   os << "Element: ";
   if(tok) {

@@ -423,6 +423,10 @@ class AbstractPatternElement: public AbstractElement {
       return static_cast<bool>(bind);
     }
 
+    bool isLiteral() const;
+
+    bool isVariableRepeat() const;
+
     auto minimum() {
       return min;
     }
