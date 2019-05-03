@@ -42,7 +42,7 @@ base128 {
 # a length delimited string of bytes
 length_delim {
   pattern: base128=>length u8{length}=>payload
-  storage: [length=>u64 payload=>vector]
+  storage: [length payload=>vector]
 }
 
 # single byte bit field that denotes the field number and type
