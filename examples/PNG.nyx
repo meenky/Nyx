@@ -28,7 +28,6 @@
 
 # grab definitions from other files
 @import nyx.crc as nc
-@import ascii from nyx.text
 # unless specified otherwise there is always an implicit import of nyx into the
 # current namespace
 
@@ -41,14 +40,12 @@ magic_number {
 
 
 chunk {
-  pattern:  i32b=>length ascii{4}=>type u8{length}=>data i32b=>crc
+  pattern:  i32b=>length 0b0*******{4}=>type u8{length}=>data i32b=>crc
   storage:  [length=>i32 type=>string data=>vector]
-  validate: (==
+  validate: ((==
               crc
-              (i32b
-                (nc.crc32 0xedb88320 0xFFFFFFFF (concat type data) 0xFFFFFFFF)
-              )
-            )
+              (crc32 0xedb88320 0xFFFFFFFF (concat type data) 0xFFFFFFFF)
+            ))
 }
 
 
