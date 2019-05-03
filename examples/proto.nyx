@@ -56,14 +56,14 @@ field_header {
 
 # fixed length eight byte value
 fixed64 {
-  pattern: i64l
-  storage: i64
+  pattern: i64l=>val
+  storage: val=>i64
 }
 
 # fixed length four byte value
 fixed32 {
-  pattern: i32l
-  storage: i32
+  pattern: i32l=>val
+  storage: val=>i32
 }
 
 # combination of a key and a value
@@ -74,12 +74,12 @@ field {
     2 => length_delim
     5 => fixed32
   }=>value
-  storage: [header value]
+  storage: [header=>field_header value]
 }
 
 # an entire message
 message {
   pattern: field{1,*}=>fields
-  storage: fields
+  storage: fields=>vector
 }
 
