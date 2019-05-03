@@ -2,6 +2,10 @@
 
 #include <nyx/registry.h>
 
+#include <map>
+#include <vector>
+#include <stdint.h>
+
 
 namespace nyx {
 
@@ -12,6 +16,8 @@ class Stage {
     Stage(const nyx::syntax::AbstractMatchElement &);
     Stage(const nyx::syntax::AbstractSimplePatternElement &);
     Stage(const nyx::syntax::AbstractCompoundPatternElement &);
+    Stage(const std::vector<uint8_t> &, const std::string &min, const std::string &max,
+          const std::string & name);
 
     Stage(const Stage &);
     Stage& operator=(const Stage&);
@@ -20,8 +26,44 @@ class Stage {
       return stage.get();
     }
 
+    bool isVariableRepeat() const {
+      return min != max;
+    }
+
+    bool isUnbounded() const {
+      return max == "-1";
+    }
+
+    bool isOptional() const {
+      return min == "0";
+    }
+
+    bool isSingleRepeat() const {
+      return min == "1" && max == "1";
+    }
+
+    bool isPrimitive() const {
+      return exact.size() > 0;
+    }
+
     bool isCompound() const {
       return static_cast<bool>(sub);
+    }
+
+    bool isMatch() const {
+      return select.size() > 0;
+    }
+
+    bool isWildcard() const {
+      switch(what) {
+        case nyx::syntax::Lexeme::BinaryPattern:
+        case nyx::syntax::Lexeme::OctalPattern:
+        case nyx::syntax::Lexeme::HexadecimalPattern:
+          return true;
+        break;
+      }
+
+      return false;
     }
 
     const Stage *group() const {
@@ -44,8 +86,20 @@ class Stage {
       return ident;
     }
 
-    const std::string &pattern() const {
-      return pat;
+    const std::string &reference() const {
+      return ref;
+    }
+
+    const std::vector<uint8_t> &pattern() const {
+      return exact;
+    }
+
+    std::pair<uint8_t, uint8_t> wildcard() const {
+      return wild;
+    }
+
+    const std::map<uint64_t, std::string> &match() const {
+      return select;
     }
 
     nyx::syntax::Lexeme lexeme() const {
@@ -53,13 +107,19 @@ class Stage {
     }
 
   protected:
-    std::unique_ptr<Stage>   stage;
-    std::unique_ptr<Stage>   sub;
-    std::string              min;
-    std::string              max;
-    std::string              ident;
-    std::string              pat;
-    nyx::syntax::Lexeme      what;
+    std::unique_ptr<Stage>          stage;
+    std::unique_ptr<Stage>          sub;
+    std::string                     min;
+    std::string                     max;
+    std::vector<uint8_t>            exact;
+    std::string                     ident;
+    std::string                     ref;
+    std::pair<uint8_t, uint8_t>     wild;
+    std::map<uint64_t, std::string> select;
+    nyx::syntax::Lexeme             what;
+
+  private:
+    void assignMetadata(const nyx::syntax::AbstractPatternElement &);
 };
 
 class Alternate {
@@ -67,11 +127,11 @@ class Alternate {
     Alternate(const nyx::syntax::AbstractPatternElement &);
 
     const Stage &pattern() const {
-      return stage;
+      return *stage;
     }
 
   protected:
-    Stage stage;
+    std::unique_ptr<Stage> stage;
 };
 
 

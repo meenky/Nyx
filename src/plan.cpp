@@ -24,33 +24,12 @@ static std::vector<std::string> toVector(const std::shared_ptr<AbstractIdentifie
 }
 
 
-Stage::Stage() {
-}
+void Stage::assignMetadata(const AbstractPatternElement &element) {
+  if(element.hasMinimum()) {
+    min = element.minimum()->text();
 
-
-Stage::Stage(const nyx::syntax::AbstractMatchElement &match) {
-
-}
-
-
-Stage::Stage(const nyx::syntax::AbstractSimplePatternElement &simple):
-  stage(nullptr),
-  sub(nullptr) {
-
-  if(simple.isToken()) {
-    pat = simple.token()->text();
-    what = simple.token()->lexeme();
-  }
-  else {
-    pat = simple.identifier()->toString();
-    what = Lexeme::Identifier;
-  }
-
-  if(simple.hasMinimum()) {
-    min = simple.minimum()->text();
-
-    if(simple.hasMaximum()) {
-      max = simple.maximum()->text();
+    if(element.hasMaximum()) {
+      max = element.maximum()->text();
 
       if(max == "*") {
         max = "-1";
@@ -78,9 +57,160 @@ Stage::Stage(const nyx::syntax::AbstractSimplePatternElement &simple):
     min = max = "1";
   }
 
-  if(simple.hasBinding()) {
-    ident = simple.binding()->text();
+  if(element.hasBinding()) {
+    ident = element.binding()->text();
   }
+}
+
+
+Stage::Stage():
+  what(Lexeme::INVALID) {
+}
+
+
+Stage::Stage(const AbstractMatchElement &match) {
+  ref = match.discriminant()->toString();
+
+  for(auto &element : match) {
+    select.emplace(std::stoi(element->key()->text()), element->value()->toString());
+  }
+
+  assignMetadata(match);
+}
+
+
+static void patternHandler(std::pair<uint8_t, uint8_t> &wild, const Token &token) {
+  switch(token.lexeme()) {
+    case Lexeme::BinaryPattern: {
+      std::string mask(token.text().begin() + 2, token.text().end());
+      std::string value(mask);
+
+      for(auto idx = mask.size(); idx-- > 0;) {
+        if(value[idx] == '*') {
+          mask[idx] = value[idx] = '0';
+        }
+        else {
+          mask[idx] = '1';
+        }
+      }
+
+      wild.first  = std::stoi(mask,  nullptr, 2);
+      wild.second = std::stoi(value, nullptr, 2);
+    } break;
+
+    case Lexeme::OctalPattern: {
+      std::string mask(token.text().begin() + 2, token.text().end());
+      std::string value(mask);
+
+      for(auto idx = mask.size(); idx-- > 0;) {
+        if(value[idx] == '*') {
+          mask[idx] = value[idx] = '0';
+        }
+        else {
+          mask[idx] = '7';
+        }
+      }
+
+      wild.first  = std::stoi(mask,  nullptr, 8);
+      wild.second = std::stoi(value, nullptr, 8);
+    } break;
+
+    case Lexeme::HexadecimalPattern: {
+      std::string mask(token.text().begin() + 2, token.text().end());
+      std::string value(mask);
+
+      for(auto idx = mask.size(); idx-- > 0;) {
+        if(value[idx] == '*') {
+          mask[idx] = value[idx] = '0';
+        }
+        else {
+          mask[idx] = 'F';
+        }
+      }
+
+      wild.first  = std::stoi(mask,  nullptr, 16);
+      wild.second = std::stoi(value, nullptr, 16);
+    } break;
+  }
+}
+
+
+static void literalHandler(std::vector<uint8_t> &exact, const Token &token) {
+  switch(token.lexeme()) {
+    case Lexeme::BinaryLiteral: {
+      auto &str = token.text();
+      auto bytes = (str.size() + 5) / 8;
+      for(auto max = str.size(), idx = 2UL; idx < max; idx += 8) {
+        exact.emplace_back(std::stoi(str.substr(idx, std::min(8, (int) (max - idx))), nullptr, 2));
+      }
+    } break;
+
+    case Lexeme::OctalLiteral:
+      exact.emplace_back(std::stoll(token.text().substr(2), nullptr, 8));
+    break;
+
+    case Lexeme::DecimalLiteral: {
+      auto val = std::stoll(token.text());
+      int bit = 56;
+      while(bit > 0 && (val & (0xFF << bit)) == 0) {
+        bit -= 8;
+      }
+
+      while(bit >= 0) {
+        exact.emplace_back(val & (0xFF << bit));
+        bit -= 8;
+      }
+    } break;
+
+    case Lexeme::HexadecimalLiteral: {
+      auto &str = token.text();
+      auto bytes = (str.size() - 1) / 2;
+      for(auto max = str.size(), idx = 2UL; idx < max; idx += 2) {
+        exact.emplace_back(std::stoi(str.substr(idx, std::min(2, (int) (max - idx))), nullptr, 16));
+      }
+    } break;
+
+    case Lexeme::StringLiteral: {
+      auto iter = token.text().begin() + 1;
+      auto end  = token.text().end()   - 1;
+      while(iter != end) {
+        exact.emplace_back(*iter++);
+      }
+    } break;
+  }
+}
+
+
+Stage::Stage(const AbstractSimplePatternElement &simple):
+  stage(nullptr),
+  sub(nullptr) {
+
+  if(simple.isToken()) {
+    switch(what = simple.token()->lexeme()) {
+      case Lexeme::Identifier:
+        ref = simple.token()->text();
+      break;
+
+      case Lexeme::BinaryLiteral:
+      case Lexeme::DecimalLiteral:
+      case Lexeme::HexadecimalLiteral:
+      case Lexeme::StringLiteral:
+        literalHandler(exact, *simple.token());
+      break;
+
+      case Lexeme::BinaryPattern:
+      case Lexeme::OctalPattern:
+      case Lexeme::HexadecimalPattern:
+        patternHandler(wild, *simple.token());
+      break;
+    }
+  }
+  else {
+    ref = simple.identifier()->toString();
+    what = Lexeme::Identifier;
+  }
+
+  assignMetadata(simple);
 }
 
 
@@ -89,7 +219,37 @@ static auto make_stage(const AbstractPatternElement &pat) {
     return std::make_unique<Stage>(*reinterpret_cast<const AbstractSimplePatternElement *>(&pat));
   }
   else if(pat.is(AbstractElementType::CompoundPattern)) {
-    return std::make_unique<Stage>(*reinterpret_cast<const AbstractCompoundPatternElement *>(&pat));
+    // simplify if possible
+    auto &group = *reinterpret_cast<const AbstractCompoundPatternElement *>(&pat);
+    bool canCompress = true;
+
+    for(auto &sub : group) {
+      if(!sub->isLiteral() || sub->isVariableRepeat()) {
+        canCompress = false;
+        break;
+      }
+    }
+
+    if(canCompress) {
+      std::vector<uint8_t> exact;
+      std::string min("1"), max("1"), name;
+
+      for(auto &sub : group) {
+        literalHandler(
+          exact,
+          *reinterpret_cast<const AbstractSimplePatternElement *>(sub.get())->token()
+        );
+      }
+
+      if(group.hasBinding()) {
+        name.assign(group.binding()->text());
+      }
+
+      return std::make_unique<Stage>(exact, min, max, name);
+    }
+    else {
+      return std::make_unique<Stage>(*reinterpret_cast<const AbstractCompoundPatternElement *>(&pat));
+    }
   }
   else if(pat.is(AbstractElementType::Match)) {
     return std::make_unique<Stage>(*reinterpret_cast<const AbstractMatchElement *>(&pat));
@@ -143,34 +303,48 @@ Stage::Stage(const nyx::syntax::AbstractCompoundPatternElement &compound):
 }
 
 
+Stage::Stage(const std::vector<uint8_t> &vec,
+      const std::string &minimum,
+      const std::string &maximum,
+      const std::string &name):
+  stage(nullptr),
+  sub(nullptr),
+  min(minimum),
+  max(maximum),
+  exact(vec),
+  what(Lexeme::INVALID) {
+}
+
+
 Stage::Stage(const Stage &that):
   stage(static_cast<bool>(that.stage) ? new Stage(*that.stage) : nullptr),
   sub(static_cast<bool>(that.sub) ? new Stage(*that.sub) : nullptr),
   min(that.min),
   max(that.max),
+  exact(that.exact),
   ident(that.ident),
-  pat(that.pat),
+  ref(that.ref),
+  wild(that.wild),
+  select(that.select),
   what(that.what) {
 }
 
 Stage& Stage::operator=(const Stage &that) {
   stage.reset(static_cast<bool>(that.stage) ? new Stage(*that.stage) : nullptr);
   sub.reset(static_cast<bool>(that.sub) ? new Stage(*that.sub) : nullptr);
-  min =   that.min;
-  max =   that.max;
-  ident = that.ident;
-  pat =   that.pat;
-  what =  that.what;
+  min =    that.min;
+  max =    that.max;
+  exact =  that.exact;
+  ident =  that.ident;
+  ref =    that.ref;
+  wild =   that.wild;
+  select = that.select;
+  what =   that.what;
 }
 
 
-Alternate::Alternate(const AbstractPatternElement &pat) {
-  if(pat.is(AbstractElementType::SimplePattern)) {
-    stage = Stage(*reinterpret_cast<const AbstractSimplePatternElement *>(&pat));
-  }
-  else if(pat.is(AbstractElementType::CompoundPattern)) {
-    stage = Stage(*reinterpret_cast<const AbstractCompoundPatternElement *>(&pat));
-  }
+Alternate::Alternate(const AbstractPatternElement &pat):
+  stage(make_stage(pat)) {
 }
 
 

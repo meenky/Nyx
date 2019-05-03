@@ -72,25 +72,124 @@ static std::string &toArray(const std::vector<std::string> &list, std::string &d
 }
 
 
+static const char *toSize(const std::string &type) {
+  switch(type[1]) {
+    case '8': return "1"; break;
+    case '1': return "2"; break;
+    case '3': return "4"; break;
+    case '6': return "8"; break;
+  }
+
+  return "1"; // something is weird here
+}
+
+
 static void translateStage(std::string &script, const Stage &stage) {
   script.append("          {\n");
-  if(stage.isCompound()) {
+  if(stage.isPrimitive()) {
+    script.append("            type = \"ExactMatch\",\n");
+    script.append("            pattern = { ");
+    for(auto val : stage.pattern()) {
+      script.append(std::to_string(val)).append(", ");
+    }
+    script.append("},\n");
+  }
+  else if(stage.isWildcard()) {
+    script.append("            type = \"PatternMatch\",\n");
+    script.append("            pattern = {\n");
+    script.append("              mask  = ");
+    script.append(std::to_string(stage.wildcard().first)).append(",\n");
+    script.append("              value = ");
+    script.append(std::to_string(stage.wildcard().second)).append("\n");
+    script.append("            },\n");
+  }
+  else if(stage.isCompound()) {
     script.append("            type = \"Group\",\n");
     for(auto ptr = stage.group(); ptr; ptr = ptr->next()) {
       translateStage(script, *ptr);
     }
   }
+  else if(stage.isMatch()) {
+    script.append("            type = \"Select\",\n");
+    script.append("            pattern = {\n");
+    script.append("              reference = \"").append(stage.reference()).append("\",\n");
+    script.append("              keys = { ");
+    for(auto &val : stage.match()) {
+      script.append(std::to_string(val.first)).append(", ");
+    }
+    script.append("},\n");
+    for(auto &val : stage.match()) {
+      script.append("              [").append(std::to_string(val.first)).append("] = \"");
+      script.append(val.second).append("\",\n");
+    }
+    script.append("            },\n");
+  }
   else {
-    script.append("            type = \"").append(toString(stage.lexeme())).append("\",\n");
-    if(stage.lexeme() != Lexeme::StringLiteral) {
-      script.append("            pattern = \"").append(stage.pattern()).append("\",\n");
+    auto &type = stage.reference();
+    if(type == "u8"  || type == "i8"  ||
+       type == "i16" || type == "u16" ||
+       type == "i32" || type == "u32" ||
+       type == "f32" || type == "f64" ||
+       type == "i64" || type == "u64") {
+      // read in an integer or float in machine byte order
+      script.append("            type = \"Numeric\",\n");
+      script.append("            pattern = {\n");
+      script.append("              type = \"").append(type).append("\",\n");
+      script.append("              size = ").append(toSize(type)).append(",\n");
+      script.append("              order = \"machine\",\n");
+      if(type != "f32" && type != "f64") {
+        script.append("              signed = ").append(type[0] == 'i' ? "true" : "false").append(",\n");
+      }
+      script.append("            },\n");
+    }
+    else if(type == "i16l" || type == "u16l" ||
+            type == "i32l" || type == "u32l" ||
+            type == "f32l" || type == "f64l" ||
+            type == "i64l" || type == "u64l") {
+      // read in an integer or float in little endian byte order
+      script.append("            type = \"Numeric\",\n");
+      script.append("            pattern = {\n");
+      script.append("              type = \"").append(type).append("\",\n");
+      script.append("              size = ").append(toSize(type)).append(",\n");
+      script.append("              order = \"little\",\n");
+      if(type != "f32l" && type != "f64l") {
+        script.append("              signed = ").append(type[0] == 'i' ? "true" : "false").append(",\n");
+      }
+      script.append("            },\n");
+    }
+    else if(type == "i16b" || type == "u16b" ||
+            type == "i32b" || type == "u32b" ||
+            type == "f32b" || type == "f64b" ||
+            type == "i64b" || type == "u64b") {
+      // read in an integer or float in big endian byte order
+      script.append("            type = \"Numeric\",\n");
+      script.append("            pattern = {\n");
+      script.append("              type = \"").append(type).append("\",\n");
+      script.append("              size = ").append(toSize(type)).append(",\n");
+      script.append("              order = \"big\",\n");
+      if(type != "f32b" && type != "f64b") {
+        script.append("              signed = ").append(type[0] == 'i' ? "true" : "false").append(",\n");
+      }
+      script.append("            },\n");
     }
     else {
-      script.append("            pattern = ").append(stage.pattern()).append(",\n");
+      script.append("            type = \"Identifier\",\n");
+      script.append("            pattern = \"").append(stage.reference()).append("\",\n");
     }
   }
-  script.append("            minimum = ").append(stage.minimum()).append(",\n");
-  script.append("            maximum = ").append(stage.maximum()).append(",\n");
+
+  if(isalpha(stage.minimum()[0])) {
+    script.append("            minimum = \"").append(stage.minimum()).append("\",\n");
+  }
+  else {
+    script.append("            minimum = ").append(stage.minimum()).append(",\n");
+  }
+  if(isalpha(stage.maximum()[0])) {
+    script.append("            maximum = \"").append(stage.maximum()).append("\",\n");
+  }
+  else {
+    script.append("            maximum = ").append(stage.maximum()).append(",\n");
+  }
   if(stage.hasName()) {
     script.append("            ident = \"").append(stage.name()).append("\",\n");
   }
@@ -119,37 +218,55 @@ static void translateStorage(std::string &script, const Storage &storage) {
 
 
 static void translateSexpr(std::string &script, const AbstractSexpr *sexpr) {
-  script.append("{ ");
   while(sexpr) {
     if(sexpr->isToken()) {
       auto &token = *sexpr->token();
-      script.append("{ \"").append(token.text()).append("\", \"");
-      script.append(toString(token.lexeme())).append("\" }, ");
+      script.append("{ value = \"").append(token.text()).append("\", type = \"");
+      script.append(toString(token.lexeme())).append("\" ");
+      switch(token.lexeme()) {
+        case Lexeme::Assignment:
+        case Lexeme::BitwiseAnd:
+        case Lexeme::BitwiseNot:
+        case Lexeme::BitwiseOr:
+        case Lexeme::BitwiseXor:
+        case Lexeme::CloseAngle:
+        case Lexeme::Division:
+        case Lexeme::Equality:
+        case Lexeme::Minus:
+        case Lexeme::Modulo:
+        case Lexeme::OpenAngle:
+        case Lexeme::Plus:
+        case Lexeme::Times:
+        case Lexeme::LeftShift:
+        case Lexeme::RightShift:
+          script.append(", mode = \"BinOp\" ");
+        break;
+      }
+      script.append("}, ");
     }
     else if(sexpr->isIdentifier()) {
       std::string list;
       auto &ident = *sexpr->identifier();
-      script.append("{ { ");
+      script.append("{ value = { ");
       for(auto &tok : ident) {
         script.append("\"").append(tok->text()).append("\", ");
       }
-      script.append("}, \"").append(toString(Lexeme::Identifier)).append("\" }, ");
+      script.append("}, type = \"Identifier\" }, ");
     }
     else if(sexpr->isSexpr()) {
-      script.append("{ ");
+      script.append("{ value = ");
       translateSexpr(script, sexpr->sexpr().get());
-      script.append(", \"Sexpr\" }, ");
+      script.append("type = \"Sexpr\" }, ");
     }
 
     sexpr = sexpr->next().get();
   }
-  script.append("}");
 }
 
 static void translateCode(std::string &script, const std::string &name, const Code &code) {
-  script.append("      ").append(name).append(" = ");
+  script.append("      ").append(name).append(" = { ");
   translateSexpr(script, code.sexpr().get());
-  script.append(",\n");
+  script.append("},\n");
 }
 
 
@@ -247,6 +364,9 @@ int Plugin::execute(Plan &plan) {
   }
 
   script.append("}\n");
+
+  std::cerr << script << std::endl;
+
   script.append(
     "-- END AUTOGENERATED DATA\n\n"
     // add in an extra function to aid in output
@@ -276,7 +396,7 @@ int Plugin::execute(Plan &plan) {
     "execute(plan)\n"
   );
 
-  std::cerr << script << std::endl;
+  //std::cerr << script << std::endl;
 
   if(luaL_dostring(asState(L), script.c_str())) {
     std::cerr << "Error running " << lang << " plugin: " << lua_tostring(asState(L), -1) << std::endl;
